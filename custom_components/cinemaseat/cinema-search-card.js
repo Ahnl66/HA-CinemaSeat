@@ -16,10 +16,21 @@ class CinemaSeatSearchCard extends HTMLElement {
         #message {min-height:22px;margin:12px 0} #message.error {color:var(--error-color)}
         .result {display:flex;align-items:center;flex-wrap:wrap;gap:8px;border-top:1px solid var(--divider-color);padding:12px 0}
         .name {flex:1;min-width:120px;overflow-wrap:anywhere} small {display:block;color:var(--secondary-text-color);margin-top:4px}
+        .controls {display:flex;flex-wrap:wrap;gap:8px;margin:12px 0} #playbackState {overflow-wrap:anywhere}
         .tracks {border-top:1px solid var(--divider-color);margin-top:12px;padding-top:4px} [hidden] {display:none!important}
       </style>
       <ha-card>
         <h2>Search and start a film</h2><label for="player">Player</label><select id="player"></select>
+        <section class="tracks" aria-label="Selected player controls">
+          <h3>Playback</h3><div id="playbackState" role="status" aria-live="polite"></div>
+          <div class="controls">
+            <button data-service="media_play">Play / resume</button>
+            <button data-service="media_pause">Pause</button>
+            <button data-service="media_stop">Stop</button>
+            <button data-service="media_previous_track">Previous chapter</button>
+            <button data-service="media_next_track">Next chapter</button>
+          </div>
+        </section>
         <form><input aria-label="Film title" placeholder="Search for a film…" maxlength="128" required><button type="submit">Search</button></form>
         <p class="hint">Open CinemaSeat and select the HA icon on your player. Stop the current film before starting another. Use Options to choose audio and subtitles before starting.</p>
         <div id="message" role="status" aria-live="polite"></div><div id="results"></div>
@@ -47,6 +58,9 @@ class CinemaSeatSearchCard extends HTMLElement {
       this._play({title:this._selection.title,media_content_id:this._selection.id},
         {audio_id:audio||null,subtitle_id:subtitle||null,subtitles_off:!subtitle,boot_id:this._selection.boot_id});
     });
+    for (const button of this.shadowRoot.querySelectorAll("button[data-service]")) {
+      button.addEventListener("click",()=>this._transport(button.dataset.service));
+    }
     this.shadowRoot.querySelector("#currentAudio").addEventListener("change",()=>this._switchTrack("audio"));
     this.shadowRoot.querySelector("#currentSubtitle").addEventListener("change",()=>this._switchTrack("subtitle"));
   }
@@ -57,7 +71,7 @@ class CinemaSeatSearchCard extends HTMLElement {
     this._update();
   }
   set hass(hass) {this._hass=hass;this._update();}
-  getCardSize() {return 7;}
+  getCardSize() {return 9;}
   _entity() {return this.shadowRoot.querySelector("#player").value||this._config.entity;}
   _update() {
     if (!this._hass||!this._config) return;
@@ -85,10 +99,37 @@ class CinemaSeatSearchCard extends HTMLElement {
     for (const button of this.shadowRoot.querySelectorAll("button.details")) button.disabled=this._busy||unavailable;
     this.shadowRoot.querySelector("#startSelected").disabled=this._busy||unavailable||active;
     for (const id of ["startAudio","startSubtitle"]) this.shadowRoot.querySelector("#"+id).disabled=this._busy||unavailable;
+    this._renderPlayback(state,unavailable);
     this._renderCurrent(attributes,unavailable);
     if (!this._busy&&unavailable) this._message(attributes.pairing_required ? "Pair CinemaSeat in its HA settings, then use Reconfigure in Home Assistant." : "HA mode disconnected. Open CinemaSeat and select the HA icon.");
     else if (!this._busy&&this._offline) this._message("");
     this._offline=unavailable;
+  }
+  _renderPlayback(state,unavailable) {
+    const attributes=state?.attributes||{}, status=attributes.status||state?.state||"unavailable";
+    this.shadowRoot.querySelector("#playbackState").textContent=
+      [attributes.media_title,status].filter(Boolean).join(" · ");
+    const current=!!attributes.session_id&&!['idle','stopped','ended','error'].includes(status);
+    for (const button of this.shadowRoot.querySelectorAll("button[data-service]")) {
+      const service=button.dataset.service;
+      let allowed=current;
+      if (service==="media_play") allowed=current&&["ready","paused"].includes(status);
+      else if (service==="media_pause") allowed=current&&status==="playing";
+      else if (service!=="media_stop") allowed=current&&["playing","paused"].includes(status);
+      button.disabled=this._busy||unavailable||!allowed;
+    }
+  }
+  async _transport(service) {
+    const button=this.shadowRoot.querySelector(`button[data-service="${service}"]`);
+    if (this._busy||!button||button.disabled) return;
+    const entity=this._entity();
+    this._busy=true;this._update();this._message("Sending playback command…");
+    try {
+      await this._hass.callWS({type:"call_service",domain:"media_player",service,
+        target:{entity_id:entity},service_data:{}});
+      this._message("Playback command sent. Actual playback is confirmed by player state.");
+    } catch (err) {this._message(err.message||String(err),true);}
+    finally {this._busy=false;this._update();}
   }
   _option(value,text) {const option=document.createElement("option");option.value=value;option.textContent=text;return option;}
   _fillSelect(select,tracks,value,defaultLabel) {
@@ -184,4 +225,4 @@ class CinemaSeatSearchCard extends HTMLElement {
 }
 if (!customElements.get("cinemaseat-search-card")) customElements.define("cinemaseat-search-card",CinemaSeatSearchCard);
 window.customCards=window.customCards||[];
-window.customCards.push({type:"cinemaseat-search-card",name:"CinemaSeat film search",description:"Search, start, and choose audio/subtitles through the tvOS player."});
+window.customCards.push({type:"cinemaseat-search-card",name:"CinemaSeat film search",description:"Search, start, control playback, and choose audio/subtitles on the selected tvOS player."});

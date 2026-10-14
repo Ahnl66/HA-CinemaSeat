@@ -24,6 +24,8 @@ docker exec homeassistant-test python /tmp/ha-cinemaseat-tests/tests/test_pairin
 
 The suite exercises real HA imports with a fake paired direct player. It covers search, versions, boot/session isolation, confirmed start, lease/heartbeat cleanup, explicit track choices, removal during pending work, multi-entry service lifetime, setup/unload failures, card availability, and reloading. The additional suite exercises actual aiohttp sockets, code expiry/single use/rate limits, key scoping, config-flow validation, entry migration, and authenticated reconnect. It sends no commands to a physical player.
 
+Frontend DOM regression tests are documented in [tests/README.md](../tests/README.md). They cover selection between multiple players and command/error handling.
+
 For a release, also validate the package structure and secret-free examples, check JavaScript syntax (`node --check custom_components/cinemaseat/cinema-search-card.js`), and run an installation/removal/reinstallation cycle through HACS on a backed-up test HA instance. Test with the tvOS simulator; do not infer physical playback, HDMI, or HDR support from simulator results.
 
 ## Release

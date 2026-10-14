@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1 — 2026-10-14
+
+- Playback, pause, stop, and chapter controls are built into the search card and follow its player selector.
+- Show the selected player’s current film and playback state; disable commands that do not apply.
+- Simplify example dashboards to avoid buttons bound to a different player.
+
 ## 0.5.0 — 2026-10-14
 
 - Direct Home Assistant WebSocket connection; no MQTT configuration or broker required.

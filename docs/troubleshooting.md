@@ -9,7 +9,7 @@
 - **Player unavailable after pairing:** return to CinemaSeat's main screen and select the HA icon. Pairing itself does not enable control in normal mode.
 - **Pairing no longer valid:** HA may have removed/reconfigured the entry or restored an older backup. Pair again using the corresponding Add integration/Reconfigure form. The old key is not displayed and never needs to be typed.
 - **HTTPS fails:** use the correct HTTPS port and a certificate trusted by the Apple TV. The app does not bypass certificate checks.
-- **Custom element doesn't exist:** add `/cinemaseat/cinema-search-card.js?v=0.5.0` as a JavaScript module, ensure a CinemaSeat entry is loaded, and reload the browser. The card intentionally returns 404 with no loaded entries.
+- **Custom element doesn't exist:** add `/cinemaseat/cinema-search-card.js?v=0.5.1` as a JavaScript module, ensure a CinemaSeat entry is loaded, and reload the browser. The card intentionally returns 404 with no loaded entries.
 - **No search/track capabilities:** update CinemaSeat. Film search uses the app's configured library; verify it in normal browsing mode.
 - **Cannot start another film / stale session:** stop the current film first, then refresh details. Obtain track IDs from the intended film and the current session/boot IDs from player feedback.
 - **Track change delayed:** commands are asynchronous. The UI follows actual player state. An audio change can briefly rebuild the playback pipeline.

@@ -5,23 +5,3 @@ views:
     cards:
       - type: custom:cinemaseat-search-card
         entity: media_player.cinemaseat_apple_tv
-      - type: media-control
-        entity: media_player.cinemaseat_apple_tv
-      - type: horizontal-stack
-        cards:
-          - type: button
-            name: Previous chapter
-            icon: mdi:skip-previous
-            tap_action:
-              action: perform-action
-              perform_action: media_player.media_previous_track
-              target:
-                entity_id: media_player.cinemaseat_apple_tv
-          - type: button
-            name: Next chapter
-            icon: mdi:skip-next
-            tap_action:
-              action: perform-action
-              perform_action: media_player.media_next_track
-              target:
-                entity_id: media_player.cinemaseat_apple_tv
