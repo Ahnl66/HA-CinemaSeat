@@ -197,6 +197,20 @@ class CinemaSeatTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(callable(removals[0]))
         timer.assert_called_once()
 
+    async def test_curtain_requires_supported_idle_player_and_keeps_target(self):
+        with self.assertRaisesRegex(HomeAssistantError, "Update"):
+            await self.player.async_show_curtain()
+        self.broker.state["capabilities"].append("show_curtain")
+        self.broker.state.update(status="playing", session_id="existing")
+        with self.assertRaisesRegex(HomeAssistantError, "Stop"):
+            await self.player.async_show_curtain()
+        self.broker.state.update(status="idle", session_id=None)
+        await self.player.async_show_curtain()
+        await self.player.async_show_curtain(False)
+        commands=[c for c in self.broker.commands if c["action"]=="show_curtain"]
+        self.assertEqual([c["show"] for c in commands], [True,False])
+        self.assertTrue(all(c["player_id"]==self.player.entry.data["player_id"] and c["boot_id"]=="boot-1" for c in commands))
+
     async def test_search_preserves_playback_and_distinguishes_versions(self):
         self.broker.state.update(status="playing", session_id="existing", owner="local")
         result = await self.player.async_search_media(SearchMediaQuery(search_query="title"))

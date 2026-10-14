@@ -14,7 +14,7 @@ from homeassistant.helpers import config_validation as cv, service
 from .transport import PlayerHub, CinemaSeatPlayerView
 
 DOMAIN = "cinemaseat"
-SERVICES = ("movie_details", "select_audio", "select_subtitle")
+SERVICES = ("movie_details", "select_audio", "select_subtitle", "show_curtain")
 
 
 class CinemaSeatCardView(HomeAssistantView):
@@ -38,6 +38,10 @@ class CinemaSeatCardView(HomeAssistantView):
 
 def _register_services(hass):
     """Register actions when the first player is loaded."""
+    service.async_register_platform_entity_service(
+        hass, "cinemaseat", "show_curtain", entity_domain="media_player",
+        schema={vol.Optional("show", default=True): cv.boolean}, func="async_show_curtain",
+    )
     service.async_register_platform_entity_service(
         hass, "cinemaseat", "movie_details", entity_domain="media_player",
         schema={vol.Required("movie_id"): vol.All(cv.string, vol.Length(min=1, max=128))},

@@ -162,6 +162,7 @@ class CinemaSeatPlayer(MediaPlayerEntity):
     def extra_state_attributes(self):
         return {"pairing_required": not bool(self.entry.data.get("auth_token")), **{k: self.snapshot.get(k) for k in [
             "player_id", "boot_id", "session_id", "status", "owner", "buffering", "error_code",
+            "capabilities", "curtain_state",
             "audio_tracks", "subtitle_tracks", "selected_audio_id", "selected_subtitle_id", "subtitles_off",
         ]}}
 
@@ -322,6 +323,15 @@ class CinemaSeatPlayer(MediaPlayerEntity):
                                                 control_id=control, timeout=8)
                     with suppress(HomeAssistantError):
                         await self._request("release_control", state, control_id=control, timeout=8)
+
+    async def async_show_curtain(self, show=True):
+        async with self.command_lock:
+            state = (await self._request("get_state"))["state"]
+            if "show_curtain" not in state.get("capabilities", []):
+                raise HomeAssistantError("Update the CinemaSeat tvOS app to use Show curtain.")
+            if state.get("status") not in {"idle", "stopped", "ended", "error"}:
+                raise HomeAssistantError("Stop the current film before changing the curtain.")
+            await self._request("show_curtain", state, show=show)
 
     async def _transport(self, action):
         async with self.command_lock:

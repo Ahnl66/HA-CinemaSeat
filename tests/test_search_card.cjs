@@ -51,3 +51,22 @@ test('search, film start and track changes share the same player selector',async
  card.shadowRoot.querySelector('#currentSubtitle').value='';await card._switchTrack('subtitle');
  assert.equal(calls.at(-1).target.entity_id,b);assert.equal(calls.at(-1).service_data.session_id,'session-1');
 });
+
+test('curtain toggle follows selected player, confirmed state and capability',async()=>{
+ const {card,calls,hass,select}=fixture();
+ for (const entity of [a,b]) {
+  hass.states[entity].attributes.status='idle';
+  hass.states[entity].attributes.capabilities=['show_curtain'];
+  hass.states[entity].attributes.curtain_state='hidden';
+  select(entity);await card._showCurtain();
+  assert.deepEqual(calls.at(-1),{type:'call_service',domain:'cinemaseat',service:'show_curtain',target:{entity_id:entity},service_data:{show:true}});
+  assert.equal(card.shadowRoot.querySelector('#showCurtain').getAttribute('aria-pressed'),'false');
+  hass.states[entity].attributes.curtain_state='closed';card.hass=hass;
+  assert.equal(card.shadowRoot.querySelector('#showCurtain').getAttribute('aria-pressed'),'true');
+  await card._showCurtain();assert.equal(calls.at(-1).service_data.show,false);
+ }
+ hass.states[b].attributes.status='playing';card.hass=hass;
+ assert.equal(card.shadowRoot.querySelector('#showCurtain').disabled,true);
+ hass.states[b].attributes.status='idle';hass.states[b].attributes.capabilities=[];card.hass=hass;
+ assert.equal(card.shadowRoot.querySelector('#showCurtain').disabled,true);
+});

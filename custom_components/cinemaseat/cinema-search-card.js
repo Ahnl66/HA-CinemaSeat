@@ -11,6 +11,7 @@ class CinemaSeatSearchCard extends HTMLElement {
         select,input {box-sizing:border-box;width:100%;padding:12px;color:var(--primary-text-color);background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:8px}
         select {margin-bottom:16px} form {display:flex;gap:8px} form input {flex:1;min-width:0}
         button {cursor:pointer;padding:10px 16px;border:0;border-radius:8px;background:var(--primary-color);color:var(--text-primary-color,#fff)}
+        button[aria-pressed="true"] {box-shadow:inset 0 0 0 3px var(--primary-text-color)}
         button:disabled {opacity:.45;cursor:default} button:focus-visible,input:focus-visible,select:focus-visible {outline:2px solid var(--primary-color);outline-offset:3px}
         .hint {font-size:13px;color:var(--secondary-text-color);margin:12px 0}
         #message {min-height:22px;margin:12px 0} #message.error {color:var(--error-color)}
@@ -24,6 +25,7 @@ class CinemaSeatSearchCard extends HTMLElement {
         <section class="tracks" aria-label="Selected player controls">
           <h3>Playback</h3><div id="playbackState" role="status" aria-live="polite"></div>
           <div class="controls">
+            <button id="showCurtain" aria-pressed="false">Show curtain</button>
             <button data-service="media_play">Play / resume</button>
             <button data-service="media_pause">Pause</button>
             <button data-service="media_stop">Stop</button>
@@ -58,6 +60,7 @@ class CinemaSeatSearchCard extends HTMLElement {
       this._play({title:this._selection.title,media_content_id:this._selection.id},
         {audio_id:audio||null,subtitle_id:subtitle||null,subtitles_off:!subtitle,boot_id:this._selection.boot_id});
     });
+    this.shadowRoot.querySelector("#showCurtain").addEventListener("click",()=>this._showCurtain());
     for (const button of this.shadowRoot.querySelectorAll("button[data-service]")) {
       button.addEventListener("click",()=>this._transport(button.dataset.service));
     }
@@ -109,6 +112,12 @@ class CinemaSeatSearchCard extends HTMLElement {
     const attributes=state?.attributes||{}, status=attributes.status||state?.state||"unavailable";
     this.shadowRoot.querySelector("#playbackState").textContent=
       [attributes.media_title,status].filter(Boolean).join(" · ");
+    const curtain=this.shadowRoot.querySelector("#showCurtain");
+    curtain.setAttribute("aria-pressed",String(attributes.curtain_state==="closed"));
+    curtain.disabled=this._busy||unavailable||!["idle","stopped","ended","error"].includes(status)||
+      !(attributes.capabilities||[]).includes("show_curtain");
+    curtain.title=(attributes.capabilities||[]).includes("show_curtain") ?
+      "Show or hide the closed curtain before starting a film" : "Update the CinemaSeat tvOS app to use Show curtain";
     const current=!!attributes.session_id&&!['idle','stopped','ended','error'].includes(status);
     for (const button of this.shadowRoot.querySelectorAll("button[data-service]")) {
       const service=button.dataset.service;
@@ -118,6 +127,17 @@ class CinemaSeatSearchCard extends HTMLElement {
       else if (service!=="media_stop") allowed=current&&["playing","paused"].includes(status);
       button.disabled=this._busy||unavailable||!allowed;
     }
+  }
+  async _showCurtain() {
+    if (this._busy||this.shadowRoot.querySelector("#showCurtain").disabled) return;
+    const entity=this._entity(),show=this._hass.states[entity]?.attributes.curtain_state!=="closed";
+    this._busy=true;this._update();this._message("Sending curtain command…");
+    try {
+      await this._hass.callWS({type:"call_service",domain:"cinemaseat",service:"show_curtain",
+        target:{entity_id:entity},service_data:{show}});
+      this._message("Curtain command sent. The player confirms its state.");
+    } catch (err) {this._message(err.message||String(err),true);}
+    finally {this._busy=false;this._update();}
   }
   async _transport(service) {
     const button=this.shadowRoot.querySelector(`button[data-service="${service}"]`);

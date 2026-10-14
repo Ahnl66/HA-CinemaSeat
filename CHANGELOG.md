@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0 — 2026-10-14
+
+- Add Show curtain to the selected-player card and a `cinemaseat.show_curtain` action.
+- The updated tvOS app shows the closed first frame until film start, then opens the existing curtain animation.
+- Curtain state is confirmed by the player; older apps disable the new button until updated.
+- HA curtain control is independent of the normal app setting and resets when leaving HA mode or ending playback.
+
 ## 0.5.1 — 2026-10-14
 
 - Playback, pause, stop, and chapter controls are built into the search card and follow its player selector.

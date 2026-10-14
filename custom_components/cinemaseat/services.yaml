@@ -51,3 +51,16 @@ select_subtitle:
       required: true
       selector:
         text:
+show_curtain:
+  name: Show curtain
+  description: Show the closed curtain on the selected player before starting a film. The film start opens it automatically.
+  target:
+    entity:
+      integration: cinemaseat
+      domain: media_player
+  fields:
+    show:
+      name: Show curtain
+      default: true
+      selector:
+        boolean:

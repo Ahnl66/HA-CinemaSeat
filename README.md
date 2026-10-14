@@ -45,7 +45,7 @@ The MQTT integration/broker can remain for other devices. If MQTT is loaded duri
 In your HA profile, enable **Advanced mode** if Resources is hidden. In **Settings → Dashboards → ⋮ → Resources**, add this **JavaScript module**:
 
 ```text
-/cinemaseat/cinema-search-card.js?v=0.5.1
+/cinemaseat/cinema-search-card.js?v=0.6.0
 ```
 
 Add a manual card, replacing the entity with your paired CinemaSeat player:
@@ -56,6 +56,8 @@ entity: media_player.cinemaseat_apple_tv
 ```
 
 The player selector lists configured CinemaSeat players; restrict it with an optional `entities` list. A custom `title` is supported. Playback, pause, stop, chapter buttons, and audio/subtitle choices are built into this card. All controls follow the selected player. Use the complete [example dashboard](examples/dashboard.yaml) without adding separate playback buttons.
+
+**Show curtain** displays the closed curtain on the selected player before a film. Press it again to hide it. Starting a film opens the same curtain animation used in normal browsing. HA mode ignores the app’s normal curtain setting; each new HA mode session begins with its connection screen. Update the CinemaSeat app as well as this integration for this feature.
 
 Search a title, then choose **Start** on the intended film version. Use **Options** to choose audio/subtitles first. During playback, selectors change the current film's tracks or turn subtitles off. Actual selection is confirmed by player feedback.
 

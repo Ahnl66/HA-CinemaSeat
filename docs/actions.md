@@ -86,3 +86,17 @@ For a subtitle track, use `track_id: YOUR_SUBTITLE_ID` and `off: false` instead.
 `player_id`, `boot_id`, `session_id`, `status`, `owner`, `buffering`, `error_code`, `audio_tracks`, `subtitle_tracks`, `selected_audio_id`, `selected_subtitle_id`, and `subtitles_off` accompany standard media title, duration, and position. Actual app feedback supplies these values. A player that disconnects or stops reporting for 20 seconds becomes unavailable.
 
 Volume control and waking/opening the Apple TV app are not implemented by this integration.
+
+## Show curtain
+
+Display or hide the closed curtain before choosing a film. The action requires an updated, connected player in HA mode with no preparation or playback in progress. Film start opens the curtain automatically.
+
+```yaml
+action: cinemaseat.show_curtain
+target:
+  entity_id: media_player.cinemaseat_apple_tv
+data:
+  show: true
+```
+
+`show` defaults to `true`; use `false` to return to the HA connection screen. The card toggle follows the selected player and its confirmed `curtain_state` (`hidden`, `closed`, or `opening`). The normal tvOS curtain preference does not control HA mode.

@@ -39,3 +39,9 @@ The hub tracks loaded entries, authenticated sockets, and temporary pairing sess
 Version-1 MQTT entries migrate to version 2 with their player identity retained and `requires_pairing` set. Their old keys are discarded. Reconfigure obtains a direct key without renaming the media entity. Legacy discovery cleanup is attempted only if MQTT is already loaded; the new integration's only component dependency is HTTP.
 
 For HTTPS, certificate verification remains enabled. HTTP pairing/control is intended for trusted local networks; use HTTPS when the network is untrusted. HACS removal requires an HA restart to remove process-level HTTP routes, as described in the README.
+
+## HA curtain presentation
+
+Updated players advertise `show_curtain` in capabilities and report `curtain_state` as `hidden`, `closed`, or `opening`. The boot-scoped `show_curtain` command has an optional boolean `show` (default true); it is authenticated like all other commands and requires no active film. It returns executed with player state.
+
+The closed overlay remains mounted across preparation/start. Preparation arms the player’s existing curtain barrier only when HA has requested a curtain. The start command releases preparation; native readiness triggers the curtain opening and releases playback together. Stop, end, error, and returning to normal browsing clear the curtain. Connection recovery retains the current presentation without granting a new start.
