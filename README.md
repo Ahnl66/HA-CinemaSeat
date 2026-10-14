@@ -26,6 +26,8 @@ Opening the HA form starts the pairing endpoint, including on a fresh installati
 
 No broker username/password, manually entered player ID, or permanent pairing-code field is needed. Pairing itself does not start a film or enable control outside HA mode.
 
+The main settings menu shows the saved HA address and port. HA settings are available through the main gear icon. The HA icon is hidden until a valid HA destination has been saved. **Clear** in the HA settings removes the saved destination and local pairing key, retaining the generated Player ID. Pair again to reconnect; delete the HA player entry separately if you also want to remove it from Home Assistant.
+
 For HTTPS, enter `https://ha.example.com` and the HTTPS port (usually `443`). Certificate verification remains enabled. HTTP is supported for trusted local networks; use HTTPS for connections outside that network. Changing the saved HA destination clears the key for the old destination, so it cannot be sent to another HA server.
 
 This is a HACS **custom repository**, not currently a default-catalogue entry. The dashboard card and brand assets are bundled in the Integration package; there is no separate frontend repository.
@@ -67,7 +69,7 @@ Search is case/accent insensitive, accepts 1–128 characters, and returns up to
 
 ## HA mode and reconnect
 
-- **Back before playback:** return to normal browsing and cancel preparation.
+- **Back before playback:** return to normal browsing from the HA connection screen or a closed curtain, cancel any preparation, and clear the curtain. Update the tvOS app for reliable Back handling on these screens.
 - **Playing/paused:** remain in HA mode.
 - **After stop, end, or playback error:** Back can return to normal browsing.
 - Cold app launches start in normal mode. Leaving HA mode or backgrounding the app disconnects control.
