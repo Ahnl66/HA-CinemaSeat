@@ -27,3 +27,9 @@ Validated on 2026-10-14 with HA Core 2026.10.1 (Container) and the normal Cinema
 All player tests used the simulator; no physical Apple TV, HDMI, or HDR validation was performed. The non-secret HA test address was prefilled by the Debug simulator bootstrap because automated Device Hub text input could not reliably operate the tvOS keyboard. URL validation and settings persistence were separately tested against production Swift code; the six-digit pairing itself used the actual TV screen and authenticated HA wizard.
 
 The old HA player entry/package had been removed before this deployment, so the live scenario used Add integration. Migration and wrong-player reconfiguration guards were exercised by automated tests. The 0.4.0 verification report records the earlier HACS install/remove/reinstall cycle; 0.5.0 retains the same package layout and card lifecycle while additionally closing authenticated sockets on unload.
+
+## Final HACS and unload checks
+
+HACS downloaded v0.5.0 from GitHub and recorded it as installed at commit `61505ff`. After HA restarted, the version-2 direct player entry retained its key. Temporarily disabling the player invoked unload and made the card return 404; enabling it restored HTTP 200. Re-entering HA mode reused the same key successfully. No player entry was permanently deleted for this lifecycle test.
+
+The final app also passed a production-code check that backgrounding cancels a pairing session opened from normal mode. Native UI inspection confirmed persistent address/port labels and readable focused pairing buttons. The test environment was left paired, connected in HA mode, and idle with no film running.
