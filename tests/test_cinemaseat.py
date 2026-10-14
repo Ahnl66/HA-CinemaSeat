@@ -9,12 +9,16 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-spec = importlib.util.spec_from_file_location("cinemaseat_player_under_test", (Path(sys.argv.pop(1)) if len(sys.argv) > 1 and sys.argv[1].endswith(".py") else Path(__file__).resolve().parents[1] / "custom_components/cinemaseat/media_player.py"))
+player_path = (Path(sys.argv.pop(1)) if len(sys.argv) > 1 and sys.argv[1].endswith(".py") else
+               Path(__file__).resolve().parents[1] / "custom_components/cinemaseat/media_player.py")
+setup_spec = importlib.util.spec_from_file_location("cinemaseat_under_test", player_path.with_name("__init__.py"),
+                                                  submodule_search_locations=[str(player_path.parent)])
+setup_module = importlib.util.module_from_spec(setup_spec)
+sys.modules[setup_spec.name] = setup_module
+setup_spec.loader.exec_module(setup_module)
+spec = importlib.util.spec_from_file_location("cinemaseat_under_test.media_player", player_path)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
-setup_spec = importlib.util.spec_from_file_location("cinemaseat_setup_under_test", Path(spec.origin).with_name("__init__.py"))
-setup_module = importlib.util.module_from_spec(setup_spec)
-setup_spec.loader.exec_module(setup_module)
 from homeassistant.components.media_player import SearchMediaQuery
 from homeassistant.components.media_player.errors import SearchError
 from homeassistant.exceptions import HomeAssistantError
@@ -38,10 +42,9 @@ class Broker:
                  "boot_id": command.get("boot_id", self.state["boot_id"]), "status": status, **fields}
         self.player._reply_received(SimpleNamespace(payload=json.dumps(reply)))
 
-    async def publish(self, hass, topic, payload, *, qos, retain):
-        command = json.loads(payload)
+    async def publish(self, command):
         self.commands.append(command)
-        assert not retain and qos == 1 and command["expires_at"] > time.time()
+        assert command["expires_at"] > time.time()
         action = command["action"]
         if action == "get_state": self.reply(command, state=dict(self.state))
         elif action == "search_movies":
@@ -88,6 +91,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.actions = set()
         self.hass = SimpleNamespace(
             data={}, http=SimpleNamespace(register_view=self.views.append),
+            bus=SimpleNamespace(async_listen_once=lambda *args: None),
             services=SimpleNamespace(async_remove=lambda d, s: self.actions.discard(s)),
             config_entries=SimpleNamespace(
                 async_forward_entry_setups=AsyncMock(),
@@ -99,28 +103,28 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.patch.start()
         self.addCleanup(self.patch.stop)
         await setup_module.async_setup(self.hass, {})
-        self.first = SimpleNamespace(entry_id="first")
-        self.second = SimpleNamespace(entry_id="second")
+        self.first = SimpleNamespace(entry_id="first", data={"player_id":"first","auth_token":"t"*64})
+        self.second = SimpleNamespace(entry_id="second", data={"player_id":"second","auth_token":"s"*64})
 
     async def test_multiple_players_unload_and_reload(self):
         await asyncio.gather(setup_module.async_setup_entry(self.hass, self.first),
                              setup_module.async_setup_entry(self.hass, self.second))
-        self.assertEqual(len(self.views), 1)
+        self.assertEqual(len(self.views), 2)
         self.assertEqual(self.actions, set(setup_module.SERVICES))
         self.assertTrue(await setup_module.async_unload_entry(self.hass, self.first))
         self.assertEqual(self.actions, set(setup_module.SERVICES))
-        response = await self.views[0].get(None)
+        response = await self.views[1].get(None)
         self.assertEqual(response.status, 200)
         self.assertEqual(response.headers["Cache-Control"], "no-cache")
         self.assertTrue(await setup_module.async_unload_entry(self.hass, self.second))
         self.assertEqual(self.actions, set())
         from aiohttp import web
         with self.assertRaises(web.HTTPNotFound):
-            await self.views[0].get(None)
+            await self.views[1].get(None)
         await setup_module.async_setup_entry(self.hass, self.first)
         self.assertEqual(self.actions, set(setup_module.SERVICES))
-        self.assertEqual((await self.views[0].get(None)).status, 200)
-        self.assertEqual(len(self.views), 1)
+        self.assertEqual((await self.views[1].get(None)).status, 200)
+        self.assertEqual(len(self.views), 2)
 
     async def test_failed_unload_retains_services_and_entry(self):
         await setup_module.async_setup_entry(self.hass, self.first)
@@ -149,9 +153,10 @@ class CinemaSeatTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.player = module.CinemaSeatPlayer(SimpleNamespace(
             title="Test", data={"player_id":"test-player","auth_token":"private-test-token"}))
-        self.player.hass = SimpleNamespace(loop=asyncio.get_running_loop(), async_create_task=asyncio.create_task)
+        self.player.hass = SimpleNamespace(loop=asyncio.get_running_loop(), async_create_task=asyncio.create_task,
+            data={"cinemaseat":{"hub":SimpleNamespace(unbind_player=lambda player: None)}})
         self.broker = Broker(self.player)
-        self.patch = patch.object(module.mqtt, "async_publish", self.broker.publish)
+        self.patch = patch.object(self.player, "_send_command", self.broker.publish)
         self.patch.start()
         self.addCleanup(self.patch.stop)
         async def heartbeat(state, control):
@@ -180,20 +185,16 @@ class CinemaSeatTests(unittest.IsolatedAsyncioTestCase):
             await self.player._request("get_state")
         self.assertEqual(self.broker.commands, commands)
 
-    async def test_entity_registers_all_subscription_and_timer_cleanup(self):
+    async def test_entity_registers_transport_and_timer_cleanup(self):
         removals = []
-        subscriptions = []
+        bound = []
         self.player.async_on_remove = removals.append
-        async def subscribe(hass, topic, handler, qos):
-            subscriptions.append(topic)
-            return lambda: None
-        with patch.object(module.mqtt, "async_subscribe", subscribe), patch.object(
-                module, "async_track_time_interval", return_value=lambda: None) as timer:
+        self.player.hass.data["cinemaseat"]["hub"].bind_player = bound.append
+        with patch.object(module, "async_track_time_interval", return_value=lambda: None) as timer:
             await self.player.async_added_to_hass()
-        self.assertEqual(len(subscriptions), 3)
-        self.assertEqual(len(removals), 4)
-        self.assertTrue(all(callable(c) for c in removals))
-        self.assertTrue(any(t.endswith("/availability") for t in subscriptions))
+        self.assertEqual(bound, [self.player])
+        self.assertEqual(len(removals), 1)
+        self.assertTrue(callable(removals[0]))
         timer.assert_called_once()
 
     async def test_search_preserves_playback_and_distinguishes_versions(self):

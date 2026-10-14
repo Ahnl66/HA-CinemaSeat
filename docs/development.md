@@ -11,6 +11,7 @@ python3.14 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements-test.txt
 python tests/test_cinemaseat.py
+python tests/test_pairing.py
 ```
 
 Or run against an existing HA container without changing its dependencies:
@@ -18,9 +19,10 @@ Or run against an existing HA container without changing its dependencies:
 ```sh
 docker cp . homeassistant-test:/tmp/ha-cinemaseat-tests
 docker exec homeassistant-test python /tmp/ha-cinemaseat-tests/tests/test_cinemaseat.py
+docker exec homeassistant-test python /tmp/ha-cinemaseat-tests/tests/test_pairing.py
 ```
 
-The suite exercises real HA imports with a fake paired MQTT player. It covers search, versions, boot/session isolation, confirmed start, lease/heartbeat cleanup, explicit track choices, removal during pending work, multi-entry service lifetime, setup/unload failures, card availability, and reloading. It sends no commands to a physical player.
+The suite exercises real HA imports with a fake paired direct player. It covers search, versions, boot/session isolation, confirmed start, lease/heartbeat cleanup, explicit track choices, removal during pending work, multi-entry service lifetime, setup/unload failures, card availability, and reloading. The additional suite exercises actual aiohttp sockets, code expiry/single use/rate limits, key scoping, config-flow validation, entry migration, and authenticated reconnect. It sends no commands to a physical player.
 
 For a release, also validate the package structure and secret-free examples, check JavaScript syntax (`node --check custom_components/cinemaseat/cinema-search-card.js`), and run an installation/removal/reinstallation cycle through HACS on a backed-up test HA instance. Test with the tvOS simulator; do not infer physical playback, HDMI, or HDR support from simulator results.
 

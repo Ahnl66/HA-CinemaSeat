@@ -1,86 +1,97 @@
 # HA-CinemaSeat
 
-Control the CinemaSeat Apple TV app from Home Assistant: search for a film, choose audio and subtitles, start playback, pause, resume, stop, and navigate chapters.
+Search and control films in the CinemaSeat Apple TV app from Home Assistant. Choose audio and subtitles, start playback, pause, resume, stop, and navigate chapters.
 
-**Search runs on the Apple TV.** The path is Home Assistant → MQTT → CinemaSeat → Plex. Home Assistant does not connect to Plex or need a Plex token. CinemaSeat remains a single tvOS app with normal browsing and a Home Assistant mode.
+**Pair using six digits.** Enter your HA address and port on the Apple TV, then enter the temporary code shown on the TV in Home Assistant. The player ID and a permanent connection key are transferred automatically. You never need to type a long password.
+
+**Search runs on the Apple TV:** Home Assistant → direct WebSocket → CinemaSeat → Plex. HA does not connect to Plex or need a Plex token. MQTT is not required. CinemaSeat remains one tvOS app with normal browsing and an HA mode.
 
 ## Requirements
 
-- Home Assistant Core **2026.10.0 or later** (tested on 2026.10.1).
-- HACS, or a manual custom-integration installation. HA Container is supported; no Supervisor app is required.
-- Home Assistant's standard **MQTT integration**, connected to a broker reachable by the Apple TV.
-- A CinemaSeat build with the integrated HA icon and search/track-control support. The tvOS source lives in [CinemaPlexTV](https://github.com/Ahnl66/CinemaPlexTV); this repository contains the Home Assistant integration, bundled dashboard card, examples, and tests.
+- Home Assistant Core **2026.10.0+** (tested on 2026.10.1).
+- HACS, or a manual custom integration installation. HA Container is supported.
+- A CinemaSeat build with direct HA connection and six-digit pairing support. The tvOS source is maintained in [CinemaPlexTV](https://github.com/Ahnl66/CinemaPlexTV).
+- The Apple TV can reach the HA address and port you enter.
 
 ## Install with HACS
 
-1. In **HACS → ⋮ → Custom repositories**, enter `https://github.com/Ahnl66/HA-CinemaSeat` and select **Integration** as the type.
-2. Search for **HA-CinemaSeat** and download the latest release.
-3. Restart Home Assistant.
-4. Ensure the MQTT integration is configured for the broker used by CinemaSeat.
-5. In **Settings → Devices & services → Add integration**, choose **CinemaSeat**.
-6. Enter a friendly name, the exact **player ID** from CinemaSeat, and its **control pairing code** (at least 32 characters).
+1. In **HACS → ⋮ → Custom repositories**, add `https://github.com/Ahnl66/HA-CinemaSeat`, type **Integration**.
+2. Download the latest **HA-CinemaSeat** release and restart HA.
+3. In **Settings → Devices & services → Add integration**, choose **CinemaSeat**. Keep the six-digit-code form open.
+4. On the Apple TV, open **CinemaSeat → Settings → Home Assistant**. Enter your **HA address or IP** and **port** (usually `8123`). The generated **Player ID** is displayed for reference; do not copy it into HA.
+5. Select **Request pairing code**. Enter the six digits shown on the TV in the HA form. Optionally give the player a friendly name, then submit.
+6. CinemaSeat shows **Paired with Home Assistant**. Return to its main screen and select the blue **HA icon** to allow film control.
 
-This is a HACS custom repository; it is not currently part of the HACS default catalogue. HACS installs the entire `custom_components/cinemaseat` directory, including the dashboard JavaScript and brand icon. A separate frontend repository is not needed.
+Opening the HA form starts the pairing endpoint, including on a fresh installation with no player entries. Codes expire after **two minutes**, are single-use, and become invalid if the TV disconnects or cancels pairing. Request a new code if necessary. The permanent key is saved in the private HA entry and the Apple TV Keychain (the simulator uses its own app container).
 
-For manual installation, copy `custom_components/cinemaseat` to your HA configuration directory's `custom_components/cinemaseat`, restart HA, then continue at step 4. Do not copy this repository's entire root into `custom_components`.
+No broker username/password, manually entered player ID, or permanent pairing-code field is needed. Pairing itself does not start a film or enable control outside HA mode.
 
-## Set up CinemaSeat
+For HTTPS, enter `https://ha.example.com` and the HTTPS port (usually `443`). Certificate verification remains enabled. HTTP is supported for trusted local networks; use HTTPS for connections outside that network. Changing the saved HA destination clears the key for the old destination, so it cannot be sent to another HA server.
 
-In the tvOS app, open **Settings → Home Assistant** and configure the broker address, port, credentials, player ID, and control pairing code. Use the same broker as HA and the same player ID/pairing code as the HA entry. Each player needs a unique ID.
+This is a HACS **custom repository**, not currently a default-catalogue entry. The dashboard card and brand assets are bundled in the Integration package; there is no separate frontend repository.
 
-Return to the main screen and select the blue **HA icon**. Keep CinemaSeat open in HA mode while using Home Assistant.
+For manual installation, copy only `custom_components/cinemaseat` to your HA config directory, restart HA, and continue at step 3.
 
-- **Back before playback starts:** return to normal browsing and cancel any preparation.
-- **While playing or paused:** stay in HA mode.
-- **After stopping, ending, or a playback error:** Back can return to normal browsing.
-- A cold app launch starts in normal mode. Leaving HA mode or backgrounding the app disconnects MQTT; HA reports the player unavailable.
+## Upgrade from 0.4.x (MQTT)
 
-The integration reuses HA's MQTT connection. Broker credentials are configured in MQTT, not in this integration. The pairing code is stored in the private HA config entry and must not be committed to GitHub.
+Update the integration **and the CinemaSeat app**, then restart HA. Existing HA player entries and entity IDs are retained, but their old MQTT pairing keys are discarded. The app retains its generated player ID and asks for an HA address instead of reusing a broker address.
 
-## Add the dashboard card
+Open the existing player entry in **Settings → Devices & services → CinemaSeat → ⋮ → Reconfigure**, request a new code on that same Apple TV, and enter its six digits. Pairing a different TV into an existing entry is rejected. Use Add integration for a new TV instead.
 
-Enable **Advanced mode** in your HA profile if the Resources menu is hidden. In **Settings → Dashboards → ⋮ → Resources**, add this resource as a **JavaScript module**:
+The MQTT integration/broker can remain for other devices. If MQTT is loaded during migration, the integration attempts to clear only the four discovery sensors emitted by the old CinemaSeat app. If MQTT is unavailable, remove any old CinemaSeat MQTT sensors manually. The new media player does not depend on them.
+
+## Dashboard
+
+In your HA profile, enable **Advanced mode** if Resources is hidden. In **Settings → Dashboards → ⋮ → Resources**, add this **JavaScript module**:
 
 ```text
-/cinemaseat/cinema-search-card.js?v=0.4.0
+/cinemaseat/cinema-search-card.js?v=0.5.0
 ```
 
-Add a manual dashboard card, replacing the entity with your CinemaSeat media player:
+Add a manual card, replacing the entity with your paired CinemaSeat player:
 
 ```yaml
 type: custom:cinemaseat-search-card
 entity: media_player.cinemaseat_apple_tv
 ```
 
-The player selector lists configured CinemaSeat players. To restrict it, add an `entities` list. A custom `title` is optional. Use the built-in **media-control** card for pause/resume/stop, or the complete [example dashboard](examples/dashboard.yaml) for chapter buttons as well.
+The player selector lists configured CinemaSeat players; restrict it with an optional `entities` list. A custom `title` is supported. Add HA's **media-control** card for playback buttons, or use the complete [example dashboard](examples/dashboard.yaml).
 
-Search a title and select **Start** on the correct result. Use **Options** first to choose audio and subtitles. During playback, the current-film selectors let you change tracks or turn subtitles off. Changes are confirmed by subsequent player state; a dispatched command is not itself proof that a track is active.
+Search a title, then choose **Start** on the intended film version. Use **Options** to choose audio/subtitles first. During playback, selectors change the current film's tracks or turn subtitles off. Actual selection is confirmed by player feedback.
 
-Search is case/accent insensitive, accepts 1–128 characters, and returns at most 50 matches. Distinct film versions remain separate results. Searching can run during playback. Stop the current film before starting another. A new film starts at the beginning; the plain Start button uses default audio and subtitles off.
+Search is case/accent insensitive, accepts 1–128 characters, and returns up to 50 matches. Film versions remain separate results. Searching can run during playback. Stop the current film before starting another. A new film starts at the beginning; plain Start uses default audio and subtitles off.
 
-## Update
+## HA mode and reconnect
 
-Download the new version through HACS and restart HA. Update the resource's `?v=` suffix to the installed version and reload the browser. Keep the CinemaSeat app compatible with the search and track capabilities listed in [the protocol](docs/protocol.md).
+- **Back before playback:** return to normal browsing and cancel preparation.
+- **Playing/paused:** remain in HA mode.
+- **After stop, end, or playback error:** Back can return to normal browsing.
+- Cold app launches start in normal mode. Leaving HA mode or backgrounding the app disconnects control.
+- In active HA mode, interrupted connections reconnect automatically. The stored key is reused; another short code is only needed for re-pairing.
 
-## Remove cleanly
+## Update and remove
 
-1. Stop any active film and exit HA mode on the Apple TV.
-2. Remove CinemaSeat cards and any automations/scripts that reference its entities or actions. Remove the `/cinemaseat/cinema-search-card.js` entry from **Dashboard Resources**. These are user-owned dashboard/automation settings, so the integration does not delete them automatically.
-3. In **Settings → Devices & services → CinemaSeat**, delete each CinemaSeat player entry.
-4. In **HACS → HA-CinemaSeat → ⋮**, choose **Remove**, confirm, and restart HA. If desired, also remove it from Custom repositories.
+For updates, download the release through HACS, restart HA, update the resource's `?v=` suffix, and reload the browser.
 
-Deleting a player unloads its entity, MQTT subscriptions, periodic timer, and pending requests. When the last player unloads, the three CinemaSeat actions are unregistered and the card endpoint returns 404. HA retains the dormant HTTP route until restart; it does not serve the JavaScript while no player is loaded. HACS removes all integration files, including the card and icon. No files are copied to `www/` and no broker or dashboard is created automatically.
+For complete removal:
 
-The MQTT integration/broker and the tvOS app are shared dependencies and are retained. Historical Recorder data and HA backups follow Home Assistant's normal retention rules. Reinstalling through HACS and adding a player entry again is supported.
+1. Stop any film and exit HA mode on the Apple TV.
+2. Remove CinemaSeat dashboard cards, the `/cinemaseat/cinema-search-card.js` resource, and any scripts/automations referencing its entities or actions. These are user-owned settings and are not deleted automatically.
+3. Delete the CinemaSeat player entries in **Settings → Devices & services**. Their keys are revoked, their player sockets are closed, entities/timers unload, and pending requests fail. The last unload unregisters CinemaSeat actions and makes the card return 404.
+4. In **HACS → HA-CinemaSeat → ⋮ → Remove**, remove the package and restart HA. HACS removes all package files, including card and icon.
 
-For a manual installation, follow steps 1–3, remove only `custom_components/cinemaseat`, then restart HA.
+HA retains HTTP routes until restart. The pairing route must remain available for a new Add integration flow; it never grants control without a configured player's key. Restarting after HACS removal also removes that route and cancels all temporary pairing sessions. No files are copied into `www/`, and no broker or dashboard is created automatically.
 
-## Actions, troubleshooting, and development
+The tvOS app and shared HA dependencies are retained. Recorder history and backups follow HA's normal retention policy. Reinstalling and pairing again are supported. For manual installs, perform steps 1–3, remove `custom_components/cinemaseat`, then restart HA.
 
-- [Action reference and automation examples](docs/actions.md)
-- [MQTT protocol and lifecycle](docs/protocol.md)
+To replace a pairing, open HA's Reconfigure form and choose **Pair again** on the TV. The old key is replaced after the new pairing succeeds. No key is displayed or copied manually.
+
+## Reference
+
+- [Actions and automation examples](docs/actions.md)
+- [Direct protocol and pairing lifecycle](docs/protocol.md)
 - [Troubleshooting](docs/troubleshooting.md)
-- [Tests and release procedure](docs/development.md)
+- [Tests and releases](docs/development.md)
 - [Changelog](CHANGELOG.md)
 
-Installation and removal follow the [HACS integration layout](https://www.hacs.xyz/docs/publish/integration/) and Home Assistant's [config-entry lifecycle](https://developers.home-assistant.io/docs/config_entries_index/).
+Packaging follows the [HACS integration layout](https://www.hacs.xyz/docs/publish/integration/). Entry setup, reconfiguration, and unload use Home Assistant's [config-entry lifecycle](https://developers.home-assistant.io/docs/config_entries_index/).

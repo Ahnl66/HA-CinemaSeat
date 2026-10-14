@@ -1,12 +1,12 @@
-"""Search and confirmed playback through CinemaSeat's paired MQTT player."""
+"""Search and confirmed playback through CinemaSeat's paired direct WebSocket player."""
 import asyncio
 from contextlib import suppress
 import json
 import time
 from datetime import timedelta
 from uuid import uuid4
+from types import SimpleNamespace
 
-from homeassistant.components import mqtt
 from homeassistant.components.media_player import (
     MediaClass, MediaPlayerEntity, MediaPlayerEntityFeature, MediaPlayerState,
     MediaType, SearchMedia,
@@ -37,7 +37,6 @@ class CinemaSeatPlayer(MediaPlayerEntity):
         self.entry = entry
         self._attr_name = entry.title
         self._attr_unique_id = entry.data["player_id"] + "_media_player"
-        self.prefix = "cinemaseat/v1/" + entry.data["player_id"]
         self.controller = str(uuid4())
         self.snapshot = {}
         self.online = False
@@ -51,18 +50,34 @@ class CinemaSeatPlayer(MediaPlayerEntity):
         }
 
     async def async_added_to_hass(self):
-        for suffix, handler in [
-            ("state", self._state_received), ("availability", self._availability_received),
-            ("reply/" + self.controller, self._reply_received),
-        ]:
-            self.async_on_remove(await mqtt.async_subscribe(
-                self.hass, self.prefix + "/" + suffix, handler, qos=1))
+        self.hass.data["cinemaseat"]["hub"].bind_player(self)
         self.async_on_remove(async_track_time_interval(
             self.hass, self._check_stale, timedelta(seconds=5)))
 
     async def async_will_remove_from_hass(self):
         self._unloading = True
         self._fail_pending("CinemaSeat was unloaded")
+        self.hass.data["cinemaseat"]["hub"].unbind_player(self)
+
+    @callback
+    def connection_changed(self, online):
+        self.online = online
+        if online:
+            self.updated = 0
+            self.snapshot = {}
+        else:
+            self._fail_pending("CinemaSeat disconnected; open CinemaSeat and select HA mode")
+        self.async_write_ha_state()
+
+    @callback
+    def receive_frame(self, frame):
+        if frame.get("type") == "state" and isinstance(frame.get("state"), dict):
+            self._state_received(SimpleNamespace(payload=json.dumps(frame["state"])))
+        elif frame.get("type") == "reply" and isinstance(frame.get("reply"), dict):
+            self._reply_received(SimpleNamespace(payload=json.dumps(frame["reply"])))
+
+    async def _send_command(self, command):
+        await self.hass.data["cinemaseat"]["hub"].send(self.entry.data["player_id"], command)
 
     @callback
     def _check_stale(self, _now):
@@ -145,10 +160,10 @@ class CinemaSeatPlayer(MediaPlayerEntity):
 
     @property
     def extra_state_attributes(self):
-        return {k: self.snapshot.get(k) for k in [
+        return {"pairing_required": not bool(self.entry.data.get("auth_token")), **{k: self.snapshot.get(k) for k in [
             "player_id", "boot_id", "session_id", "status", "owner", "buffering", "error_code",
             "audio_tracks", "subtitle_tracks", "selected_audio_id", "selected_subtitle_id", "subtitles_off",
-        ]}
+        ]}}
 
     async def _request(self, action, state=None, *, timeout=20, operation=None, **fields):
         if self._unloading:
@@ -162,14 +177,14 @@ class CinemaSeatPlayer(MediaPlayerEntity):
         }
         command = {
             "version": 1, "command_id": command_id, "player_id": self.entry.data["player_id"],
-            "controller_id": self.controller, "auth_token": self.entry.data["auth_token"],
+            "controller_id": self.controller, "auth_token": self.entry.data.get("auth_token", ""),
             "expires_at": time.time() + 20, "action": action,
         }
         if state:
             command.update(boot_id=state["boot_id"], session_id=state.get("session_id"))
         command.update(fields)
         try:
-            await mqtt.async_publish(self.hass, self.prefix + "/command", json.dumps(command), qos=1, retain=False)
+            await self._send_command(command)
             reply = await asyncio.wait_for(future, timeout=timeout)
             if reply["status"] == "rejected":
                 raise HomeAssistantError("CinemaSeat: " + reply.get("code", "rejected"))

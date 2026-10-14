@@ -1,13 +1,17 @@
 """CinemaSeat lifecycle and bundled dashboard resource."""
 from pathlib import Path
+from contextlib import suppress
+from homeassistant.exceptions import HomeAssistantError
 
 from aiohttp import web
 import voluptuous as vol
 
 from homeassistant.components.http import HomeAssistantView
-from homeassistant.const import Platform
+from homeassistant.const import Platform, EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import SupportsResponse
 from homeassistant.helpers import config_validation as cv, service
+
+from .transport import PlayerHub, CinemaSeatPlayerView
 
 DOMAIN = "cinemaseat"
 SERVICES = ("movie_details", "select_audio", "select_subtitle")
@@ -58,7 +62,10 @@ def _remove_services(hass):
 
 
 async def async_setup(hass, config):
-    hass.data[DOMAIN] = {"entries": set()}
+    hub = PlayerHub(hass)
+    hass.data[DOMAIN] = {"entries": set(), "hub": hub}
+    hass.http.register_view(CinemaSeatPlayerView(hub))
+    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, hub.shutdown)
     # HA keeps HTTP routes until restart. This single view returns 404 after
     # the last entry unloads and can serve the card again after reinstall.
     hass.http.register_view(CinemaSeatCardView(hass))
@@ -70,13 +77,17 @@ async def async_setup_entry(hass, entry):
     if not entries:
         _register_services(hass)
     entries.add(entry.entry_id)
+    hub = hass.data[DOMAIN]["hub"]
+    hub.register_entry(entry)
     try:
         await hass.config_entries.async_forward_entry_setups(entry, [Platform.MEDIA_PLAYER])
     except Exception:
         entries.discard(entry.entry_id)
+        await hub.unregister_entry(entry)
         if not entries:
             _remove_services(hass)
         raise
+    hub.finish_pairing(entry)
     return True
 
 
@@ -85,6 +96,29 @@ async def async_unload_entry(hass, entry):
         return False
     entries = hass.data[DOMAIN]["entries"]
     entries.discard(entry.entry_id)
+    await hass.data[DOMAIN]["hub"].unregister_entry(entry)
     if not entries:
         _remove_services(hass)
+    return True
+
+
+async def async_migrate_entry(hass, entry):
+    """Retain player identity; old MQTT secrets cannot authenticate direct control."""
+    if entry.version > 2:
+        return False
+    if entry.version == 1:
+        player_id = entry.data["player_id"]
+        # Remove only discovery sensors emitted by our old app, if MQTT is loaded.
+        if "mqtt" in hass.config.components:
+            from homeassistant.components import mqtt
+            from .transport import PLAYER_ID
+            if PLAYER_ID.fullmatch(player_id):
+                for sensor in ("status", "title", "position", "regie"):
+                    with suppress(HomeAssistantError):
+                        await mqtt.async_publish(hass,
+                            f"homeassistant/sensor/cinemaseat_{player_id}/{sensor}/config",
+                            "", qos=1, retain=True)
+        hass.config_entries.async_update_entry(entry, version=2,
+            data={"player_id": player_id, "name": entry.data.get("name", entry.title),
+                  "transport": "direct", "requires_pairing": True})
     return True

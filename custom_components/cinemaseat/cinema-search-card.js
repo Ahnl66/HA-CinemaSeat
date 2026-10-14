@@ -86,7 +86,7 @@ class CinemaSeatSearchCard extends HTMLElement {
     this.shadowRoot.querySelector("#startSelected").disabled=this._busy||unavailable||active;
     for (const id of ["startAudio","startSubtitle"]) this.shadowRoot.querySelector("#"+id).disabled=this._busy||unavailable;
     this._renderCurrent(attributes,unavailable);
-    if (!this._busy&&unavailable) this._message("HA mode disconnected. Open CinemaSeat and select the HA icon.");
+    if (!this._busy&&unavailable) this._message(attributes.pairing_required ? "Pair CinemaSeat in its HA settings, then use Reconfigure in Home Assistant." : "HA mode disconnected. Open CinemaSeat and select the HA icon.");
     else if (!this._busy&&this._offline) this._message("");
     this._offline=unavailable;
   }

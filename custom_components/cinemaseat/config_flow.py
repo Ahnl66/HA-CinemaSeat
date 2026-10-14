@@ -1,26 +1,53 @@
-"""Pair a player without exposing broker credentials."""
+"""Pair with the six-digit code displayed on the Apple TV."""
 import re
+
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.helpers import selector
+from homeassistant.setup import async_setup_component
 
-class CinemaSeatConfigFlow(config_entries.ConfigFlow, domain="cinemaseat"):
-    VERSION = 1
+from .transport import DOMAIN
+
+
+class CinemaSeatConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    VERSION = 2
 
     async def async_step_user(self, user_input=None):
+        return await self._pair(user_input)
+
+    async def async_step_reconfigure(self, user_input=None):
+        return await self._pair(user_input, entry=self._get_reconfigure_entry())
+
+    async def _pair(self, user_input, entry=None):
+        # HACS files alone do not load HA components. Opening this flow starts
+        # the pairing endpoint even on a brand-new installation with no entries.
+        if not await async_setup_component(self.hass, DOMAIN, {}):
+            return self.async_abort(reason="cannot_connect")
+        hub = self.hass.data[DOMAIN]["hub"]
         errors = {}
         if user_input is not None:
-            player = user_input["player_id"].strip()
-            if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", player):
-                errors["player_id"] = "invalid_player"
-            elif len(user_input["auth_token"].encode()) < 32:
-                errors["auth_token"] = "invalid_token"
+            code = str(user_input.get("pairing_code", "")).strip()
+            try:
+                if not re.fullmatch(r"[0-9]{6}", code):
+                    raise ValueError("invalid_code")
+                pairing = hub.peek_pairing(code)
+                if entry and pairing.player_id != entry.data["player_id"]:
+                    raise ValueError("wrong_player")
+                await self.async_set_unique_id(pairing.player_id)
+                if not entry:
+                    self._abort_if_unique_id_configured()
+                data = hub.claim_pairing(code)
+            except ValueError as err:
+                errors["pairing_code"] = str(err)
             else:
-                await self.async_set_unique_id(player)
-                self._abort_if_unique_id_configured()
-                return self.async_create_entry(title=user_input["name"], data={**user_input, "player_id": player})
-        return self.async_show_form(step_id="user", data_schema=vol.Schema({
-            vol.Required("name", default="CinemaSeat Apple TV"): str,
-            vol.Required("player_id"): str,
-            vol.Required("auth_token"): selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)),
-        }), errors=errors)
+                name = user_input.get("name", entry.title if entry else "CinemaSeat Apple TV").strip()
+                name = name or "CinemaSeat Apple TV"
+                data["name"] = name
+                if entry:
+                    # Replace rather than merge to remove requires_pairing/legacy fields.
+                    return self.async_update_reload_and_abort(entry, title=name, data=data)
+                return self.async_create_entry(title=name, data=data)
+        return self.async_show_form(step_id="reconfigure" if entry else "user",
+            data_schema=vol.Schema({
+                vol.Required("pairing_code"): str,
+                vol.Optional("name", default=entry.title if entry else "CinemaSeat Apple TV"): str,
+            }), errors=errors)

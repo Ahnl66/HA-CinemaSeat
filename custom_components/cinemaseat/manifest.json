@@ -1,11 +1,10 @@
 {
   "domain": "cinemaseat",
   "name": "CinemaSeat",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "config_flow": true,
   "dependencies": [
-    "http",
-    "mqtt"
+    "http"
   ],
   "documentation": "https://github.com/Ahnl66/HA-CinemaSeat",
   "codeowners": [

@@ -2,21 +2,30 @@
   "config": {
     "step": {
       "user": {
-        "title": "Connect CinemaSeat",
-        "description": "Uses your existing MQTT integration. Open CinemaSeat, configure Home Assistant settings, then select the HA icon. Enter the matching player ID and control pairing code.",
+        "title": "Pair CinemaSeat",
+        "description": "Keep this form open. On the Apple TV, open CinemaSeat \u2192 Settings \u2192 Home Assistant, enter this Home Assistant address and port, and request a pairing code. Enter the six digits shown on the TV. The player ID and connection key are transferred automatically.",
         "data": {
-          "name": "Name",
-          "player_id": "Player ID",
-          "auth_token": "Control pairing code"
+          "pairing_code": "Six-digit code shown on Apple TV",
+          "name": "Player name (optional)"
+        }
+      },
+      "reconfigure": {
+        "title": "Pair CinemaSeat again",
+        "description": "On this Apple TV, request a new code in CinemaSeat \u2192 Settings \u2192 Home Assistant. Enter the six digits here. This replaces the stored connection key while retaining the player and its entity.",
+        "data": {
+          "pairing_code": "Six-digit code shown on Apple TV",
+          "name": "Player name (optional)"
         }
       }
     },
     "error": {
-      "invalid_player": "Invalid player ID",
-      "invalid_token": "Use a pairing code of at least 32 characters"
+      "invalid_code": "Code is invalid, expired, or the Apple TV disconnected. Request a new six-digit code.",
+      "wrong_player": "This code belongs to another Apple TV. Request a code on the original player."
     },
     "abort": {
-      "already_configured": "This player is already configured"
+      "already_configured": "This player is already configured. Open its CinemaSeat entry and choose Reconfigure to pair it again.",
+      "cannot_connect": "The CinemaSeat pairing endpoint could not start. Check Home Assistant logs.",
+      "reconfigure_successful": "CinemaSeat was paired successfully."
     }
   }
 }

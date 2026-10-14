@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0 — 2026-10-14
+
+- Direct Home Assistant WebSocket connection; no MQTT configuration or broker required.
+- Six-digit, single-use pairing codes valid for two minutes, with permanent keys stored automatically.
+- Simplified tvOS settings: HA address, port, generated player ID, and Request pairing code.
+- HA derives the player ID automatically and supports Reconfigure for re-pairing.
+- Existing entries retain entity identity during migration and require a fresh direct pairing.
+- Scoped keys, pairing limits, authenticated reconnect, socket cleanup, and expanded tests.
+
+
 ## 0.4.0 — 2026-10-14
 
 - First standalone HA-CinemaSeat repository and HACS release.
