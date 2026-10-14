@@ -40,7 +40,11 @@ class CinemaSeatSearchCard extends HTMLElement {
           <h3 id="selectionTitle"></h3>
           <label for="startAudio">Audio before start</label><select id="startAudio"></select>
           <label for="startSubtitle">Subtitles before start</label><select id="startSubtitle"></select>
-          <button id="startSelected">Start with these choices</button>
+          <div class="controls">
+            <button id="startSelected">Start with these choices</button>
+            <button id="makeAutomation">Make automation with these choices</button>
+          </div>
+          <p class="hint">Run the automation manually or add a trigger in Home Assistant. If Show curtain is active, it shows the curtain and waits 10 seconds before starting.</p>
         </section>
         <section id="currentTracks" class="tracks" hidden>
           <h3 id="currentTitle">Current film tracks</h3>
@@ -60,6 +64,7 @@ class CinemaSeatSearchCard extends HTMLElement {
       this._play({title:this._selection.title,media_content_id:this._selection.id},
         {audio_id:audio||null,subtitle_id:subtitle||null,subtitles_off:!subtitle,boot_id:this._selection.boot_id});
     });
+    this.shadowRoot.querySelector("#makeAutomation").addEventListener("click",()=>this._makeAutomation());
     this.shadowRoot.querySelector("#showCurtain").addEventListener("click",()=>this._showCurtain());
     for (const button of this.shadowRoot.querySelectorAll("button[data-service]")) {
       button.addEventListener("click",()=>this._transport(button.dataset.service));
@@ -101,6 +106,9 @@ class CinemaSeatSearchCard extends HTMLElement {
     for (const button of this.shadowRoot.querySelectorAll("button.play")) button.disabled=this._busy||unavailable||active;
     for (const button of this.shadowRoot.querySelectorAll("button.details")) button.disabled=this._busy||unavailable;
     this.shadowRoot.querySelector("#startSelected").disabled=this._busy||unavailable||active;
+    const automation=this.shadowRoot.querySelector("#makeAutomation");
+    automation.disabled=this._busy||unavailable||!this._selection||!this._hass.user?.is_admin;
+    automation.title=this._hass.user?.is_admin ? "Save these choices as a reusable automation" : "A Home Assistant administrator is required to create automations";
     for (const id of ["startAudio","startSubtitle"]) this.shadowRoot.querySelector("#"+id).disabled=this._busy||unavailable;
     this._renderPlayback(state,unavailable);
     this._renderCurrent(attributes,unavailable);
@@ -215,6 +223,38 @@ class CinemaSeatSearchCard extends HTMLElement {
       if (!data?.movie) throw new Error("The player returned no film details.");
       this._selection={...data.movie,title:movie.title,boot_id:data.boot_id};this._renderSelection();this._message("Choose audio and subtitles, then start the film.");
     } catch (err) {this._message(err.message||String(err),true);}
+    finally {this._busy=false;this._update();}
+  }
+  _automationConfig() {
+    const entity=this._entity(),audio=this.shadowRoot.querySelector("#startAudio").value;
+    const subtitle=this.shadowRoot.querySelector("#startSubtitle").value;
+    const actions=[];
+    if (this._hass.states[entity]?.attributes.curtain_state==="closed") {
+      actions.push({action:"cinemaseat.show_curtain",target:{entity_id:entity},data:{show:true}});
+      actions.push({delay:{seconds:10}});
+    }
+    actions.push({action:"media_player.play_media",target:{entity_id:entity},data:{
+      media_content_type:"movie",media_content_id:this._selection.id,
+      extra:{audio_id:audio||null,subtitle_id:subtitle||null,subtitles_off:!subtitle}}});
+    return {alias:"CinemaSeat - "+this._selection.title,
+      description:"Start the selected CinemaSeat film with saved audio/subtitle choices. Run manually or add a trigger in Home Assistant.",
+      triggers:[],conditions:[],actions,mode:"single"};
+  }
+  async _makeAutomation() {
+    if (this._busy||!this._selection) return;
+    if (!this._hass.user?.is_admin) {this._message("A Home Assistant administrator is required to create automations.",true);return;}
+    if (this.shadowRoot.querySelector("#makeAutomation").disabled) return;
+    // Capture the selection now; no boot/session IDs belong in a saved automation.
+    const config=this._automationConfig();
+    // getRandomValues also works on local HTTP HA instances.
+    const id="cinemaseat_"+Array.from(crypto.getRandomValues(new Uint32Array(4)),n=>n.toString(16).padStart(8,"0")).join("");
+    this._busy=true;this._update();this._message("Creating automation…");
+    try {
+      await this._hass.callApi("POST",`config/automation/config/${id}`,config);
+      this._message("Automation created: "+config.alias+". Run it manually or add a trigger.");
+      const link=document.createElement("a");link.href=`/config/automation/edit/${id}`;link.textContent="Open automation";
+      this.shadowRoot.querySelector("#message").append(" ",link);
+    } catch (err) {this._message(err.message||err.body?.message||String(err),true);}
     finally {this._busy=false;this._update();}
   }
   async _play(movie,extra={}) {

@@ -45,7 +45,7 @@ The MQTT integration/broker can remain for other devices. If MQTT is loaded duri
 In your HA profile, enable **Advanced mode** if Resources is hidden. In **Settings → Dashboards → ⋮ → Resources**, add this **JavaScript module**:
 
 ```text
-/cinemaseat/cinema-search-card.js?v=0.6.0
+/cinemaseat/cinema-search-card.js?v=0.7.0
 ```
 
 Add a manual card, replacing the entity with your paired CinemaSeat player:
@@ -58,6 +58,8 @@ entity: media_player.cinemaseat_apple_tv
 The player selector lists configured CinemaSeat players; restrict it with an optional `entities` list. A custom `title` is supported. Playback, pause, stop, chapter buttons, and audio/subtitle choices are built into this card. All controls follow the selected player. Use the complete [example dashboard](examples/dashboard.yaml) without adding separate playback buttons.
 
 **Show curtain** displays the closed curtain on the selected player before a film. Press it again to hide it. Starting a film opens the same curtain animation used in normal browsing. HA mode ignores the app’s normal curtain setting; each new HA mode session begins with its connection screen. Update the CinemaSeat app as well as this integration for this feature.
+
+**Make automation with these choices** saves a new automation named `CinemaSeat - <film title>` for the selected player, audio and subtitles. If Show curtain is active when you create it, the actions show the curtain, wait 10 seconds, then start the film. Otherwise it starts the film directly. Creation does not start playback. The automation has no trigger: run it manually or use **Open automation** to add a trigger. HA administrator access is required. Each click creates a separate automation and does not overwrite an existing one. Saved automations work after the player restarts; HA mode must be active when running them.
 
 Search a title, then choose **Start** on the intended film version. Use **Options** to choose audio/subtitles first. During playback, selectors change the current film's tracks or turn subtitles off. Actual selection is confirmed by player feedback.
 

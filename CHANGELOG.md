@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0 — 2026-10-14
+
+- Add Make automation with these choices next to Start with these choices.
+- Save the selected film, player and audio/subtitle choices in a manual automation.
+- Capture Show curtain: show it, delay 10 seconds, then start the film.
+- Unique automation IDs preserve existing automations; do not save transient player boot/session IDs.
+- Admin-only creation through HA’s standard automation API, with an editor link and error recovery.
+
 ## 0.6.0 — 2026-10-14
 
 - Add Show curtain to the selected-player card and a `cinemaseat.show_curtain` action.

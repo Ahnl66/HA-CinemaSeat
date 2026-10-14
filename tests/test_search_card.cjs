@@ -10,7 +10,7 @@ function fixture() {
   const card=dom.window.document.createElement('cinemaseat-search-card');
   const calls=[];
   const states=Object.fromEntries([a,b].map((id,i)=>[id,{state:'playing',attributes:{player_id:id,friendly_name:`TV ${i}`,status:'playing',session_id:`session-${i}`,owner:'local',media_title:`Film ${i}`,audio_tracks:[{id:'audio',name:'English'}],subtitle_tracks:[],selected_audio_id:'audio'}}]));
-  const hass={states,callWS:async request=>{calls.push(JSON.parse(JSON.stringify(request)));return {};}};
+  const hass={states,user:{is_admin:true},callWS:async request=>{calls.push(JSON.parse(JSON.stringify(request)));return {};}};
   card.setConfig({entity:a});card.hass=hass;
   const select=entity=>{card.shadowRoot.querySelector('#player').value=entity;card.shadowRoot.querySelector('#player').dispatchEvent(new dom.window.Event('change'));};
   return {dom,card,calls,hass,select};
@@ -69,4 +69,47 @@ test('curtain toggle follows selected player, confirmed state and capability',as
  assert.equal(card.shadowRoot.querySelector('#showCurtain').disabled,true);
  hass.states[b].attributes.status='idle';hass.states[b].attributes.capabilities=[];card.hass=hass;
  assert.equal(card.shadowRoot.querySelector('#showCurtain').disabled,true);
+});
+
+function movieChoices(card) {
+ card._selection={id:'movie-123',title:'Film <2026>',boot_id:'old-boot',audio:[{id:'audio-nl',name:'Dutch'}],subtitles:[{id:'sub-en',name:'English'}]};
+ card._renderSelection();card._update();
+ card.shadowRoot.querySelector('#startAudio').value='audio-nl';
+ card.shadowRoot.querySelector('#startSubtitle').value='sub-en';
+}
+test('automation saves current player and choices, curtain then ten-second delay, with no boot ID or immediate playback',async()=>{
+ const {card,hass,select,calls}=fixture();select(b);movieChoices(card);
+ hass.states[b].attributes.curtain_state='closed';card.hass=hass;
+ const saved=[];hass.callApi=async(...args)=>saved.push(JSON.parse(JSON.stringify(args)));
+ await card._makeAutomation();
+ assert.equal(saved[0][0],'POST');assert.match(saved[0][1],/^config\/automation\/config\/cinemaseat_[a-f0-9]{32}$/);
+ const config=saved[0][2];assert.equal(config.alias,'CinemaSeat - Film <2026>');
+ assert.deepEqual(config.triggers,[]);assert.deepEqual(config.conditions,[]);
+ assert.deepEqual(config.actions,[{action:'cinemaseat.show_curtain',target:{entity_id:b},data:{show:true}},{delay:{seconds:10}},
+  {action:'media_player.play_media',target:{entity_id:b},data:{media_content_type:'movie',media_content_id:'movie-123',extra:{audio_id:'audio-nl',subtitle_id:'sub-en',subtitles_off:false}}}]);
+ assert.equal(JSON.stringify(config).includes('boot'),false);assert.equal(calls.length,0);
+ assert.match(card.shadowRoot.querySelector('#message a').getAttribute('href'),/^\/config\/automation\/edit\/cinemaseat_/);
+ await card._makeAutomation();assert.notEqual(saved[0][1],saved[1][1]);
+});
+test('without curtain, automation only plays film with default audio and subtitles off',async()=>{
+ const {card,hass}=fixture();movieChoices(card);
+ card.shadowRoot.querySelector('#startAudio').value='';card.shadowRoot.querySelector('#startSubtitle').value='';
+ let saved;hass.callApi=async(method,path,config)=>saved=JSON.parse(JSON.stringify(config));
+ await card._makeAutomation();assert.equal(saved.actions.length,1);
+ assert.deepEqual(saved.actions[0].data.extra,{audio_id:null,subtitle_id:null,subtitles_off:true});
+ assert.equal(saved.actions[0].target.entity_id,a);
+});
+test('automation creation locks selection, prevents duplicate clicks, and restores controls after permission/storage errors',async()=>{
+ const {card,hass}=fixture();movieChoices(card);
+ let writes=0,reject;hass.callApi=()=>{writes++;return new Promise((_,r)=>reject=r);};
+ const pending=card._makeAutomation();assert.equal(card.shadowRoot.querySelector('#player').disabled,true);
+ await card._makeAutomation();assert.equal(writes,1);
+ reject(new Error('Storage unavailable'));await pending;
+ assert.equal(card.shadowRoot.querySelector('#player').disabled,false);
+ assert.equal(card.shadowRoot.querySelector('#makeAutomation').disabled,false);
+ assert.equal(card.shadowRoot.querySelector('#message').textContent,'Storage unavailable');
+ hass.user.is_admin=false;card.hass=hass;
+ assert.equal(card.shadowRoot.querySelector('#makeAutomation').disabled,true);
+ await card._makeAutomation();assert.equal(writes,1);
+ assert.match(card.shadowRoot.querySelector('#message').textContent,/administrator/);
 });

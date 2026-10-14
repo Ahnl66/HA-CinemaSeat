@@ -100,3 +100,11 @@ data:
 ```
 
 `show` defaults to `true`; use `false` to return to the HA connection screen. The card toggle follows the selected player and its confirmed `curtain_state` (`hidden`, `closed`, or `opening`). The normal tvOS curtain preference does not control HA mode.
+
+## Save selected film choices as an automation
+
+Search a film and open **Options**. Choose the audio and subtitles, then press **Make automation with these choices**. The card snapshots the selected player and choices. The automation’s alias is `CinemaSeat - <film title>`, with no triggers and `mode: single`. Run it manually or add a trigger in the HA editor.
+
+When **Show curtain** is active at creation, the action list contains `cinemaseat.show_curtain` (`show: true`), a 10-second delay, and `media_player.play_media` with the saved movie and track choices. Otherwise it contains only film playback. Player boot/session identifiers are excluded so a later restart does not invalidate the automation.
+
+HA mode must be active at run time. The current film must be stopped before starting a new one. Creating an automation does not execute it or modify existing automations. The administrator who clicks the button saves it through the same authenticated API used by HA’s automation editor. It is stored in HA’s automation configuration and remains user-owned if the integration is removed.
