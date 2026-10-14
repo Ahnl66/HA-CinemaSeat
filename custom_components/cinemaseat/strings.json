@@ -1,0 +1,22 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect CinemaSeat",
+        "description": "Uses your existing MQTT integration. Open CinemaSeat, configure Home Assistant settings, then select the HA icon. Enter the matching player ID and control pairing code.",
+        "data": {
+          "name": "Name",
+          "player_id": "Player ID",
+          "auth_token": "Control pairing code"
+        }
+      }
+    },
+    "error": {
+      "invalid_player": "Invalid player ID",
+      "invalid_token": "Use a pairing code of at least 32 characters"
+    },
+    "abort": {
+      "already_configured": "This player is already configured"
+    }
+  }
+}

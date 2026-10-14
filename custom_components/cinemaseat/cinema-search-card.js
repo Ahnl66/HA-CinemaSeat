@@ -1,0 +1,187 @@
+/* All library and track requests go through the paired tvOS player. */
+class CinemaSeatSearchCard extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({mode:"open"});
+    this._results=[]; this._busy=false; this._selection=null;
+    this.shadowRoot.innerHTML=`
+      <style>
+        ha-card {display:block;padding:20px} h2 {margin:0 0 16px;font-size:20px} h3 {margin:16px 0 12px;font-size:17px}
+        label {display:block;margin-bottom:6px} input,select,button {font:inherit}
+        select,input {box-sizing:border-box;width:100%;padding:12px;color:var(--primary-text-color);background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:8px}
+        select {margin-bottom:16px} form {display:flex;gap:8px} form input {flex:1;min-width:0}
+        button {cursor:pointer;padding:10px 16px;border:0;border-radius:8px;background:var(--primary-color);color:var(--text-primary-color,#fff)}
+        button:disabled {opacity:.45;cursor:default} button:focus-visible,input:focus-visible,select:focus-visible {outline:2px solid var(--primary-color);outline-offset:3px}
+        .hint {font-size:13px;color:var(--secondary-text-color);margin:12px 0}
+        #message {min-height:22px;margin:12px 0} #message.error {color:var(--error-color)}
+        .result {display:flex;align-items:center;flex-wrap:wrap;gap:8px;border-top:1px solid var(--divider-color);padding:12px 0}
+        .name {flex:1;min-width:120px;overflow-wrap:anywhere} small {display:block;color:var(--secondary-text-color);margin-top:4px}
+        .tracks {border-top:1px solid var(--divider-color);margin-top:12px;padding-top:4px} [hidden] {display:none!important}
+      </style>
+      <ha-card>
+        <h2>Search and start a film</h2><label for="player">Player</label><select id="player"></select>
+        <form><input aria-label="Film title" placeholder="Search for a film…" maxlength="128" required><button type="submit">Search</button></form>
+        <p class="hint">Open CinemaSeat and select the HA icon on your player. Stop the current film before starting another. Use Options to choose audio and subtitles before starting.</p>
+        <div id="message" role="status" aria-live="polite"></div><div id="results"></div>
+        <section id="selection" class="tracks" hidden>
+          <h3 id="selectionTitle"></h3>
+          <label for="startAudio">Audio before start</label><select id="startAudio"></select>
+          <label for="startSubtitle">Subtitles before start</label><select id="startSubtitle"></select>
+          <button id="startSelected">Start with these choices</button>
+        </section>
+        <section id="currentTracks" class="tracks" hidden>
+          <h3 id="currentTitle">Current film tracks</h3>
+          <label for="currentAudio">Current film audio</label><select id="currentAudio"></select>
+          <label for="currentSubtitle">Current film subtitles</label><select id="currentSubtitle"></select>
+          <p class="hint">Choose a track for the current film. Actual selection is confirmed by player state.</p>
+        </section>
+      </ha-card>`;
+    this.shadowRoot.querySelector("form").addEventListener("submit",e=>{e.preventDefault();this._search();});
+    this.shadowRoot.querySelector("#player").addEventListener("change",()=>{
+      this._results=[];this._selection=null;this._message("");this._renderResults();this._renderSelection();this._update();
+    });
+    this.shadowRoot.querySelector("#startSelected").addEventListener("click",()=>{
+      if (!this._selection) return;
+      const audio=this.shadowRoot.querySelector("#startAudio").value;
+      const subtitle=this.shadowRoot.querySelector("#startSubtitle").value;
+      this._play({title:this._selection.title,media_content_id:this._selection.id},
+        {audio_id:audio||null,subtitle_id:subtitle||null,subtitles_off:!subtitle,boot_id:this._selection.boot_id});
+    });
+    this.shadowRoot.querySelector("#currentAudio").addEventListener("change",()=>this._switchTrack("audio"));
+    this.shadowRoot.querySelector("#currentSubtitle").addEventListener("change",()=>this._switchTrack("subtitle"));
+  }
+  setConfig(config) {
+    if (!config.entity) throw new Error("Configure a CinemaSeat media_player as entity");
+    this._config=config;
+    this.shadowRoot.querySelector("h2").textContent=config.title||"Search and start a film";
+    this._update();
+  }
+  set hass(hass) {this._hass=hass;this._update();}
+  getCardSize() {return 7;}
+  _entity() {return this.shadowRoot.querySelector("#player").value||this._config.entity;}
+  _update() {
+    if (!this._hass||!this._config) return;
+    const select=this.shadowRoot.querySelector("#player");
+    const entities=this._config.entities ? [...this._config.entities] : Object.keys(this._hass.states).filter(id=>
+      id.startsWith("media_player.")&&this._hass.states[id].attributes.player_id);
+    if (!entities.includes(this._config.entity)) entities.unshift(this._config.entity);
+    const signature=entities.map(id=>[id,this._hass.states[id]?.attributes.friendly_name||id]);
+    if (JSON.stringify(signature)!==this._optionsSignature) {
+      const old=select.value||this._config.entity;
+      select.replaceChildren(...signature.map(([id,name])=>this._option(id,name)));
+      select.value=entities.includes(old)?old:this._config.entity;this._optionsSignature=JSON.stringify(signature);
+    }
+    const state=this._hass.states[this._entity()];
+    const unavailable=!state||["unavailable","unknown"].includes(state.state);
+    const attributes=state?.attributes||{};
+    if (this._selection&&attributes.boot_id&&this._selection.boot_id!==attributes.boot_id) {
+      this._selection=null;this._renderSelection();
+    }
+    this.shadowRoot.querySelector("input").disabled=this._busy||unavailable;
+    this.shadowRoot.querySelector("form button").disabled=this._busy||unavailable;
+    select.disabled=this._busy;
+    const active=!["idle","stopped","ended","error"].includes(attributes.status);
+    for (const button of this.shadowRoot.querySelectorAll("button.play")) button.disabled=this._busy||unavailable||active;
+    for (const button of this.shadowRoot.querySelectorAll("button.details")) button.disabled=this._busy||unavailable;
+    this.shadowRoot.querySelector("#startSelected").disabled=this._busy||unavailable||active;
+    for (const id of ["startAudio","startSubtitle"]) this.shadowRoot.querySelector("#"+id).disabled=this._busy||unavailable;
+    this._renderCurrent(attributes,unavailable);
+    if (!this._busy&&unavailable) this._message("HA mode disconnected. Open CinemaSeat and select the HA icon.");
+    else if (!this._busy&&this._offline) this._message("");
+    this._offline=unavailable;
+  }
+  _option(value,text) {const option=document.createElement("option");option.value=value;option.textContent=text;return option;}
+  _fillSelect(select,tracks,value,defaultLabel) {
+    const signature=JSON.stringify([tracks,defaultLabel]);
+    if (select.dataset.signature!==signature) {
+      select.replaceChildren(this._option("",defaultLabel),...tracks.map(track=>this._option(track.id,`${track.name} · ${track.id}`)));
+      select.dataset.signature=signature;
+    }
+    select.value=value||"";
+  }
+  _renderSelection() {
+    const section=this.shadowRoot.querySelector("#selection");section.hidden=!this._selection;
+    if (!this._selection) return;
+    this.shadowRoot.querySelector("#selectionTitle").textContent=this._selection.title;
+    this._fillSelect(this.shadowRoot.querySelector("#startAudio"),this._selection.audio||[],"","Default audio");
+    this._fillSelect(this.shadowRoot.querySelector("#startSubtitle"),this._selection.subtitles||[],"","Off");
+  }
+  _renderCurrent(attributes,unavailable) {
+    const section=this.shadowRoot.querySelector("#currentTracks");
+    const current=["playing","paused"].includes(attributes.status);
+    section.hidden=!current;
+    if (!current) return;
+    this.shadowRoot.querySelector("#currentTitle").textContent="Tracks: "+(attributes.media_title||"current film");
+    const audio=this.shadowRoot.querySelector("#currentAudio"),subtitle=this.shadowRoot.querySelector("#currentSubtitle");
+    if (!this._busy) {
+      this._fillSelect(audio,attributes.audio_tracks||[],attributes.selected_audio_id,"Current audio");
+      audio.options[0].disabled=true;
+      this._fillSelect(subtitle,attributes.subtitle_tracks||[],attributes.subtitles_off?"":attributes.selected_subtitle_id,"Off");
+    }
+    audio.disabled=this._busy||unavailable||attributes.owner!=="local"||!(attributes.audio_tracks||[]).length;
+    subtitle.disabled=this._busy||unavailable||attributes.owner!=="local"||!Array.isArray(attributes.subtitle_tracks);
+  }
+  _message(text,error=false) {const el=this.shadowRoot.querySelector("#message");el.textContent=text;el.classList.toggle("error",error);}
+  _renderResults() {
+    this.shadowRoot.querySelector("#results").replaceChildren(...this._results.map(movie=>{
+      const row=document.createElement("div");row.className="result";
+      const name=document.createElement("div");name.className="name";name.textContent=movie.title;
+      const detail=document.createElement("small");detail.textContent="Film ID: "+movie.media_content_id;name.append(detail);
+      const options=document.createElement("button");options.className="details";options.textContent="Options";
+      options.setAttribute("aria-label","Options "+movie.title);options.addEventListener("click",()=>this._details(movie));
+      const start=document.createElement("button");start.className="play";start.textContent="Start";
+      start.setAttribute("aria-label","Start "+movie.title);start.addEventListener("click",()=>this._play(movie));
+      row.append(name,options,start);return row;
+    }));
+  }
+  async _search() {
+    const query=this.shadowRoot.querySelector("input").value.trim();if (this._busy||!query) return;
+    this._busy=true;this._results=[];this._selection=null;this._renderResults();this._renderSelection();this._update();this._message("Search…");
+    try {
+      const response=await this._hass.callWS({type:"media_player/search_media",entity_id:this._entity(),search_query:query});
+      this._results=response.result||[];this._renderResults();
+      this._message(this._results.length?`${this._results.length} film(s) found.${this._results.length===50?" Maximum 50 results; refine your search.":""}`:"No films found.");
+    } catch (err) {this._message(err.message||String(err),true);}
+    finally {this._busy=false;this._update();}
+  }
+  async _details(movie) {
+    if (this._busy) return;this._busy=true;this._update();this._message("Loading audio and subtitles…");
+    const entity=this._entity();
+    try {
+      const response=await this._hass.callWS({type:"call_service",domain:"cinemaseat",service:"movie_details",
+        target:{entity_id:entity},service_data:{movie_id:movie.media_content_id},return_response:true});
+      const data=response.response?.[entity];
+      if (!data?.movie) throw new Error("The player returned no film details.");
+      this._selection={...data.movie,title:movie.title,boot_id:data.boot_id};this._renderSelection();this._message("Choose audio and subtitles, then start the film.");
+    } catch (err) {this._message(err.message||String(err),true);}
+    finally {this._busy=false;this._update();}
+  }
+  async _play(movie,extra={}) {
+    if (this._busy) return;this._busy=true;this._update();this._message("Preparing and starting the film…");
+    try {
+      await this._hass.callWS({type:"call_service",domain:"media_player",service:"play_media",target:{entity_id:this._entity()},
+        service_data:{media_content_type:"movie",media_content_id:movie.media_content_id,extra}});
+      this._message("Film started: "+movie.title);
+    } catch (err) {this._message(err.message||String(err),true);}
+    finally {this._busy=false;this._update();}
+  }
+  async _switchTrack(kind) {
+    if (this._busy) return;
+    const state=this._hass.states[this._entity()],select=this.shadowRoot.querySelector(kind==="audio"?"#currentAudio":"#currentSubtitle");
+    const value=select.value;
+    if (!state?.attributes.session_id||kind==="audio"&&!value) return;
+    this._busy=true;this._update();this._message("Sending track selection…");
+    const data={session_id:state.attributes.session_id};
+    if (kind==="audio"||value) data.track_id=value;
+    if (kind==="subtitle") data.off=!value;
+    try {
+      await this._hass.callWS({type:"call_service",domain:"cinemaseat",service:kind==="audio"?"select_audio":"select_subtitle",
+        target:{entity_id:this._entity()},service_data:data});
+      this._message("Track selection requested. Actual selection is confirmed by player state.");
+    } catch (err) {this._message(err.message||String(err),true);}
+    finally {this._busy=false;this._update();}
+  }
+}
+if (!customElements.get("cinemaseat-search-card")) customElements.define("cinemaseat-search-card",CinemaSeatSearchCard);
+window.customCards=window.customCards||[];
+window.customCards.push({type:"cinemaseat-search-card",name:"CinemaSeat film search",description:"Search, start, and choose audio/subtitles through the tvOS player."});

@@ -1,0 +1,18 @@
+{
+  "domain": "cinemaseat",
+  "name": "CinemaSeat",
+  "version": "0.4.0",
+  "config_flow": true,
+  "dependencies": [
+    "http",
+    "mqtt"
+  ],
+  "documentation": "https://github.com/Ahnl66/HA-CinemaSeat",
+  "codeowners": [
+    "@Ahnl66"
+  ],
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/Ahnl66/HA-CinemaSeat/issues",
+  "integration_type": "device",
+  "requirements": []
+}

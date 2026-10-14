@@ -1,0 +1,53 @@
+movie_details:
+  name: Film details and tracks
+  description: Get a film's audio and subtitle tracks through the tvOS app.
+  target:
+    entity:
+      integration: cinemaseat
+      domain: media_player
+  fields:
+    movie_id:
+      name: Film ID
+      required: true
+      selector:
+        text:
+select_audio:
+  name: Select audio
+  description: Switch audio in the current film. The session ID prevents controlling another film.
+  target:
+    entity:
+      integration: cinemaseat
+      domain: media_player
+  fields:
+    track_id:
+      name: Audio track ID
+      required: true
+      selector:
+        text:
+    session_id:
+      name: Session ID
+      required: true
+      selector:
+        text:
+select_subtitle:
+  name: Select subtitles
+  description: Choose a subtitle track for the current film or turn subtitles off.
+  target:
+    entity:
+      integration: cinemaseat
+      domain: media_player
+  fields:
+    track_id:
+      name: Subtitle track ID
+      selector:
+        text:
+    "off":
+      name: Subtitles off
+      default: false
+      selector:
+        boolean:
+    session_id:
+      name: Session ID
+      required: true
+      selector:
+        text:
