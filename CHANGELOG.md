@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.1 — 2026-10-18
+
+- Allow the paired HA media player to control a Play Sequence started locally on ATV, without entering HA mode.
+- Keep the ATV remote usable alongside HA pause/resume/stop, chapter, seek and track commands.
+- Expose `can_control_playback` separately from `ha_mode` and enable the dashboard controls accordingly.
+- Keep selecting/starting new content from HA restricted to explicit HA mode.
+- Requires the updated CinemaSeat app as well as this HA integration. Verified with Swift protocol regressions, 29 HA tests, 9 dashboard tests and an arm64 tvOS simulator build.
+
 ## 0.8.0 — 2026-10-18
 
 - Add Plex/NAS source search, NAS Play Sequence and track choices.

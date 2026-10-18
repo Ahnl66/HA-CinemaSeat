@@ -138,3 +138,23 @@ test('NAS source, sequence with tracks and timecode commands follow the chosen p
  assert.equal(card.shadowRoot.querySelector('#skipSequence').disabled,true);
  assert.equal(card.shadowRoot.querySelector('[data-service="media_stop"]').disabled,true);
 });
+
+
+test('locally started sequence allows transport while new film starts still require HA mode',async()=>{
+ const {card,calls,hass}=fixture();const attributes=hass.states[a].attributes;
+ attributes.ha_mode=false;attributes.can_control_playback=true;
+ attributes.capabilities=['prepare_sequence','seek_current'];
+ attributes.presentation={id:'local-show',lead:'cs',phase:'movie',waiting_for_ha:false};
+ card.hass=hass;
+ assert.equal(card.shadowRoot.querySelector('[data-service="media_pause"]').disabled,false);
+ assert.equal(card.shadowRoot.querySelector('[data-service="media_stop"]').disabled,false);
+ assert.equal(card.shadowRoot.querySelector('#moveTimecode').disabled,false);
+ assert.equal(card.shadowRoot.querySelector('#currentAudio').disabled,false);
+ assert.equal(card.shadowRoot.querySelector('form input').disabled,true);
+ assert.equal(card.shadowRoot.querySelector('#startSelected').disabled,true);
+ await card._transport('media_pause');assert.equal(calls.at(-1).service,'media_pause');
+ attributes.status='paused';card.hass=hass;
+ assert.equal(card.shadowRoot.querySelector('[data-service="media_play"]').disabled,false);
+ attributes.can_control_playback=false;card.hass=hass;
+ assert.equal(card.shadowRoot.querySelector('[data-service="media_play"]').disabled,true);
+});

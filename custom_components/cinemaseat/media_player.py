@@ -205,7 +205,7 @@ class CinemaSeatPlayer(MediaPlayerEntity):
     def extra_state_attributes(self):
         return {"pairing_required": not bool(self.entry.data.get("auth_token")), **{k: self.snapshot.get(k) for k in [
             "player_id", "boot_id", "session_id", "status", "owner", "buffering", "error_code",
-            "capabilities", "curtain_state", "presentation", "ha_mode", "chapter_id",
+            "capabilities", "curtain_state", "presentation", "ha_mode", "can_control_playback", "chapter_id",
             "audio_tracks", "subtitle_tracks", "selected_audio_id", "selected_subtitle_id", "subtitles_off",
         ]}}
 

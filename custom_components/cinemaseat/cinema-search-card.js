@@ -149,8 +149,8 @@ class CinemaSeatSearchCard extends HTMLElement {
     const presentation=attributes.presentation;
     const preroll=!!presentation&&presentation.phase!=="movie";
     this.shadowRoot.querySelector("#skipSequence").hidden=!preroll;
-    this.shadowRoot.querySelector("#skipSequence").disabled=this._busy||unavailable||attributes.ha_mode===false||!!presentation?.waiting_for_ha;
-    this.shadowRoot.querySelector("#moveTimecode").disabled=this._busy||unavailable||attributes.ha_mode===false||preroll||!["playing","paused"].includes(status)||!(attributes.capabilities||[]).includes("seek_current");
+    this.shadowRoot.querySelector("#skipSequence").disabled=this._busy||unavailable||(attributes.can_control_playback??attributes.ha_mode)===false||!!presentation?.waiting_for_ha;
+    this.shadowRoot.querySelector("#moveTimecode").disabled=this._busy||unavailable||(attributes.can_control_playback??attributes.ha_mode)===false||preroll||!["playing","paused"].includes(status)||!(attributes.capabilities||[]).includes("seek_current");
     if (presentation) this.shadowRoot.querySelector("#playbackState").textContent += ` · ${presentation.lead.toUpperCase()} · ${presentation.phase}${presentation.waiting_for_ha?" · Waiting for HA release":""}`;
     const current=!!attributes.session_id&&!['idle','stopped','ended','error'].includes(status);
     for (const button of this.shadowRoot.querySelectorAll("button[data-service]")) {
@@ -159,7 +159,7 @@ class CinemaSeatSearchCard extends HTMLElement {
       if (service==="media_play") allowed=current&&["ready","paused"].includes(status);
       else if (service==="media_pause") allowed=current&&status==="playing";
       else if (service!=="media_stop") allowed=current&&["playing","paused"].includes(status);
-      button.disabled=this._busy||unavailable||!allowed||attributes.ha_mode===false;
+      button.disabled=this._busy||unavailable||!allowed||(attributes.can_control_playback??attributes.ha_mode)===false;
     }
   }
   async _showCurtain() {
@@ -213,8 +213,8 @@ class CinemaSeatSearchCard extends HTMLElement {
       audio.options[0].disabled=true;
       this._fillSelect(subtitle,attributes.subtitle_tracks||[],attributes.subtitles_off?"":attributes.selected_subtitle_id,"Off");
     }
-    audio.disabled=this._busy||unavailable||attributes.ha_mode===false||attributes.owner!=="local"||!(attributes.audio_tracks||[]).length;
-    subtitle.disabled=this._busy||unavailable||attributes.ha_mode===false||attributes.owner!=="local"||!Array.isArray(attributes.subtitle_tracks);
+    audio.disabled=this._busy||unavailable||(attributes.can_control_playback??attributes.ha_mode)===false||attributes.owner!=="local"||!(attributes.audio_tracks||[]).length;
+    subtitle.disabled=this._busy||unavailable||(attributes.can_control_playback??attributes.ha_mode)===false||attributes.owner!=="local"||!Array.isArray(attributes.subtitle_tracks);
   }
   _message(text,error=false) {const el=this.shadowRoot.querySelector("#message");el.textContent=text;el.classList.toggle("error",error);}
   _renderResults() {

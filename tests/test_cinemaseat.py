@@ -270,6 +270,26 @@ class CinemaSeatTests(unittest.IsolatedAsyncioTestCase):
         await self.player.async_media_stop()
         self.assertEqual(self.broker.commands[-1]["presentation_id"], "show-1")
 
+    async def test_local_sequence_can_be_controlled_without_ha_mode(self):
+        self.broker.state.update(ha_mode=False, can_control_playback=True, session_id="local-film", status="playing",
+                                 presentation={"id": "local-show", "phase": "movie", "lead": "cs"})
+        self.broker.state["capabilities"].append("seek_current")
+        await self.player.async_media_pause()
+        self.broker.state["status"] = "paused"
+        await self.player.async_media_play()
+        self.broker.state["status"] = "playing"
+        await self.player.async_media_next_track()
+        await self.player.async_media_previous_track()
+        await self.player.async_media_seek(75)
+        await self.player.async_select_audio("audio-nl", "local-film")
+        await self.player.async_select_subtitle("local-film", off=True)
+        await self.player.async_media_stop()
+        commands = [c for c in self.broker.commands if c["action"] != "get_state"]
+        self.assertEqual([c["action"] for c in commands], ["pause_current", "resume_current", "next_chapter_current",
+            "previous_chapter_current", "seek_current", "select_audio_current", "select_subtitle_current", "stop_current"])
+        self.assertTrue(all(c["session_id"] == "local-film" for c in commands))
+        self.assertEqual(commands[-1]["presentation_id"], "local-show")
+
     async def test_no_results_and_invalid_query(self):
         self.broker.movies=[]
         self.assertEqual((await self.player.async_search_media(SearchMediaQuery(search_query="unknown"))).result, [])

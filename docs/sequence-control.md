@@ -2,7 +2,7 @@
 
 ## Two operating modes
 
-**CS leads:** start Play Sequence on Apple TV in normal browsing. The per-NAS-source Sequence option **Wait for Home Assistant before starting** is off by default. When enabled, CinemaSeat emits `prepare_start_sequence` and holds the first content and curtain until HA releases this specific presentation. The TV offers **Start anyway** and **Cancel**. Only HA's `start_sequence` release is accepted in this mode; transport commands are rejected. Sequence events and feature timecode are sent while a paired connection is available, including when waiting is disabled.
+**CS leads:** start Play Sequence on Apple TV in normal browsing. The per-NAS-source Sequence option **Wait for Home Assistant before starting** is off by default. When enabled, CinemaSeat emits `prepare_start_sequence` and holds the first content and curtain until HA releases this specific presentation. The TV offers **Start anyway** and **Cancel**. While the sequence is active, the paired HA media player and ATV remote can both control it. Selecting/starting a new film from HA still requires HA mode. Sequence events and feature timecode are sent while a paired connection is available, including when waiting is disabled.
 
 **HA leads:** select HA mode on Apple TV and search Plex, NAS, or both in the HA card. For an indexed NAS film, **Play Sequence** / `cinemaseat.prepare_sequence` requests the same sequence and always waits for HA's explicit release. The TV remote stays usable. During preroll HA can release, skip a step, or stop the whole presentation. During the feature HA can pause, resume, stop, navigate chapters, select audio/subtitles and use `media_player.media_seek`. The card exposes **Move to Timecode** in HH:MM:SS. Sequence playback always starts the feature at zero. Audio/subtitle choices are retained through preroll; explicit choices override saved defaults.
 
@@ -14,7 +14,7 @@ Keep existing six-digit pairing and direct WebSocket transport. A local sequence
 
 The presentation ID spans all preroll clips and the feature. Clip session IDs continue to identify individual player sessions. HA commands also retain boot/session/expiry validation. `start_sequence` requires the exact presentation ID from the preparation event; duplicate release is harmless, stale release is rejected. The sequence starts only after both release and actual local readiness. If release arrives before preparation is complete, it is remembered. Once HA releases, the ready curtain/content start together without another remote press.
 
-HA-led sequence playback uses local session ownership so physical remote actions and HA commands work together. The presentation's `lead` and the explicit HA mode determine whether HA transport is allowed; a legacy exclusive control lease is not used for this sequence route. The previous direct-play lease workflow remains available for older automations.
+HA-led sequence playback uses local session ownership so physical remote actions and HA commands work together. The presentation's `lead` identifies who initiated the sequence. Both local and HA-led active sequences allow HA transport; `can_control_playback` exposes this separately from `ha_mode`. New film selection/start and legacy control leases still require HA mode; a legacy exclusive control lease is not used for the sequence route. The previous direct-play lease workflow remains available for older automations.
 
 ## HA interface
 
@@ -25,7 +25,7 @@ Services target the paired `media_player` entity:
 | `cinemaseat.prepare_sequence` | Required `movie_id` (`nas:` indexed ID); optional `audio_id`, `subtitle_id`, `subtitles_off` (default true). Returns `presentation_id` when response data is requested. Requests preparation only, never releases the start. |
 | `cinemaseat.start_sequence` | Required `presentation_id` copied from the Prepare event. Releases a CS-led or HA-led pending start. |
 | `cinemaseat.advance_sequence` | Starts a ready curtain opening or skips current preroll content. Does not bypass HA wait or affect the feature. |
-| `media_player.media_stop` | Stops the whole HA-led sequence, including preparation and black transitions. |
+| `media_player.media_stop` | Stops the whole active sequence, including preparation and black transitions. |
 | `media_player.media_seek` | Required `seek_position`, finite seconds within the feature. Applies while playing or paused; no seeking in bumpers. |
 | Standard media-player and track actions | Pause/resume, next/previous chapter, audio/subtitle selection during the feature, still with current session validation. |
 
@@ -102,3 +102,7 @@ A real Apple TV/NAS/HA run is still needed for HDMI/HDR transitions and actual r
 ### Implementation verification — 2026-10-18
 
 The arm64 tvOS 27 simulator build succeeds. The production remote/presentation protocol, sequence controller, NAS bumper planner and persistence, cinema sessions, NAS library, NAS HTTP/source routing and five-language localization suites pass. HA 2026.10.1 passes 28 integration tests and 14 pairing/localhost WebSocket tests; the card passes 8 jsdom tests. Both integration source copies were checked. No HA server configuration, device install or HACS release was performed. Physical Apple TV/NAS/room-script verification remains pending.
+
+### 0.8.1 — shared control for local sequences
+
+A sequence started on ATV can be controlled by the paired HA media player without entering HA mode. The app explicitly distinguishes `can_control_playback` from `ha_mode`, and the dashboard uses this for transport, skip, seek and track controls. Starting/replacing content from HA still requires HA mode. Commands retain session/presentation validation. Direct local playback remains outside the sequence integration. Update both the ATV app and HA integration; use card resource `?v=0.8.1` when registered manually.

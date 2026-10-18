@@ -24,7 +24,7 @@ Search and control films in the CinemaSeat Apple TV app from Home Assistant. Cho
 
 Opening the HA form starts the pairing endpoint, including on a fresh installation with no player entries. Codes expire after **two minutes**, are single-use, and become invalid if the TV disconnects or cancels pairing. Request a new code if necessary. The permanent key is saved in the private HA entry and the Apple TV Keychain (the simulator uses its own app container).
 
-No broker username/password, manually entered player ID, or permanent pairing-code field is needed. Pairing itself does not start a film or enable control outside HA mode.
+No broker username/password, manually entered player ID, or permanent pairing-code field is needed. Pairing itself does not start a film. Outside HA mode, HA can control an active locally started Play Sequence.
 
 The main settings menu shows the saved HA address and port. HA settings are available through the main gear icon. The HA icon is hidden until a valid HA destination has been saved. **Clear** in the HA settings removes the saved destination and local pairing key, retaining the generated Player ID. Pair again to reconnect; delete the HA player entry separately if you also want to remove it from Home Assistant.
 
@@ -47,7 +47,7 @@ The MQTT integration/broker can remain for other devices. If MQTT is loaded duri
 In your HA profile, enable **Advanced mode** if Resources is hidden. In **Settings → Dashboards → ⋮ → Resources**, add this **JavaScript module**:
 
 ```text
-/cinemaseat/cinema-search-card.js?v=0.8.0
+/cinemaseat/cinema-search-card.js?v=0.8.1
 ```
 
 Add a manual card, replacing the entity with your paired CinemaSeat player:
@@ -61,7 +61,7 @@ The player selector lists configured CinemaSeat players; restrict it with an opt
 
 **Play Sequence** prepares an indexed NAS film with the configured curtain, intros, trailer and bumpers. CinemaSeat emits Prepare Start Sequence and waits until your HA script calls `cinemaseat.start_sequence` with that presentation ID. Direct Start remains independent and starts without this handshake. The current ATV app no longer supports standalone Show curtain; old scripts using it must be updated.
 
-**Two modes:** in normal CS mode, a local Play Sequence can notify HA and optionally wait for release while CS retains control. In HA mode, HA requests the presentation and may also control it, alongside the ATV remote. Use **Skip sequence step** during preroll and **Move to Timecode** (HH:MM:SS) during the feature. [Sequence control, events and script examples](docs/sequence-control.md).
+**Two modes:** in normal CS mode, a local Play Sequence can notify HA and optionally wait for release. HA and the ATV remote can both control that active sequence. HA mode is required to select/start a new film from HA. Use **Skip sequence step** during preroll and **Move to Timecode** (HH:MM:SS) during the feature. [Sequence control, events and script examples](docs/sequence-control.md).
 
 **Make automation with these choices** saves a new automation named `CinemaSeat - <film title>` for the selected player, audio and subtitles. With the current ATV app this creates a direct film-start automation. Use the separate Play Sequence action and release script for a full presentation. Older apps can still expose their legacy curtain capability. Creation does not start playback. The automation has no trigger: run it manually or use **Open automation** to add a trigger. HA administrator access is required. Each click creates a separate automation and does not overwrite an existing one. Saved automations work after the player restarts; HA mode must be active when running them.
 
