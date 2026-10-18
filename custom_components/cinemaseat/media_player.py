@@ -2,6 +2,7 @@
 import asyncio
 from contextlib import suppress
 import json
+import math
 import time
 from datetime import timedelta
 from uuid import uuid4
@@ -29,7 +30,7 @@ class CinemaSeatPlayer(MediaPlayerEntity):
         MediaPlayerEntityFeature.PLAY | MediaPlayerEntityFeature.PAUSE
         | MediaPlayerEntityFeature.STOP | MediaPlayerEntityFeature.NEXT_TRACK
         | MediaPlayerEntityFeature.PREVIOUS_TRACK | MediaPlayerEntityFeature.PLAY_MEDIA
-        | MediaPlayerEntityFeature.SEARCH_MEDIA
+        | MediaPlayerEntityFeature.SEARCH_MEDIA | MediaPlayerEntityFeature.SEEK
     )
     _attr_media_content_type = MediaType.MOVIE
 
@@ -43,6 +44,7 @@ class CinemaSeatPlayer(MediaPlayerEntity):
         self._unloading = False
         self.updated = 0.0
         self.pending = {}
+        self._last_event = None
         self.command_lock = asyncio.Lock()
         self._attr_device_info = {
             "identifiers": {("cinemaseat", entry.data["player_id"])},
@@ -65,6 +67,7 @@ class CinemaSeatPlayer(MediaPlayerEntity):
         if online:
             self.updated = 0
             self.snapshot = {}
+            self._last_event = None
         else:
             self._fail_pending("CinemaSeat disconnected; open CinemaSeat and select HA mode")
         self.async_write_ha_state()
@@ -75,6 +78,46 @@ class CinemaSeatPlayer(MediaPlayerEntity):
             self._state_received(SimpleNamespace(payload=json.dumps(frame["state"])))
         elif frame.get("type") == "reply" and isinstance(frame.get("reply"), dict):
             self._reply_received(SimpleNamespace(payload=json.dumps(frame["reply"])))
+
+        elif frame.get("type") == "event" and isinstance(frame.get("event"), dict):
+            self._event_received(frame["event"])
+
+    @callback
+    def _event_received(self, event):
+        presentation = event.get("presentation")
+        allowed = {"prepare_start_sequence", "sequence_released", "sequence_stopped", "sequence_ended",
+                   "curtain_opening_started", "curtain_opening_ended", "theater_intro_started", "theater_intro_ended",
+                   "trailer_intro_started", "trailer_intro_ended", "trailer_started", "trailer_ended",
+                   "rating_started", "rating_ended", "audio_started", "audio_ended", "start_movie", "pause_movie",
+                   "resume_movie", "change_chapter", "change_audio", "change_subtitle", "stop_movie", "movie_ended",
+                   "timecode", "step_skipped", "playback_error"}
+        if (event.get("version") != 1 or event.get("player_id") != self.entry.data["player_id"]
+                or event.get("boot_id") != self.snapshot.get("boot_id")
+                or event.get("event") not in allowed or not isinstance(presentation, dict)):
+            return
+        sequence = event.get("sequence")
+        if not isinstance(sequence, int) or sequence < 0:
+            return
+        key = (event["boot_id"], sequence)
+        if self._last_event and key[0] == self._last_event[0] and key[1] <= self._last_event[1]:
+            return
+        current = self.snapshot.get("presentation") or {}
+        if not presentation.get("id") or current.get("id") != presentation["id"]:
+            return
+        self._last_event = key
+        state = event.get("state") or {}
+        data = {"entity_id": self.entity_id, "player_id": event["player_id"],
+                "boot_id": event["boot_id"], "presentation_id": presentation["id"],
+                "session_id": event.get("session_id"), "event": event["event"], "sequence": sequence,
+                "movie_id": presentation.get("movie_id"), "lead": presentation.get("lead"),
+                "source": "nas" if (presentation.get("movie_id") or "").startswith("nas:") else "plex",
+                "phase": presentation.get("phase"), "position": state.get("position", 0),
+                "duration": state.get("duration", 0), "status": state.get("status"),
+                "previous_position": event.get("previous_position"), "discontinuity": event.get("discontinuity", True),
+                "buffering": state.get("buffering", False), "chapter_id": state.get("chapter_id"),
+                "audio_id": state.get("selected_audio_id"), "subtitle_id": state.get("selected_subtitle_id"),
+                "subtitles_off": state.get("subtitles_off")}
+        self.hass.bus.async_fire("cinemaseat_event", data)
 
     async def _send_command(self, command):
         await self.hass.data["cinemaseat"]["hub"].send(self.entry.data["player_id"], command)
@@ -162,7 +205,7 @@ class CinemaSeatPlayer(MediaPlayerEntity):
     def extra_state_attributes(self):
         return {"pairing_required": not bool(self.entry.data.get("auth_token")), **{k: self.snapshot.get(k) for k in [
             "player_id", "boot_id", "session_id", "status", "owner", "buffering", "error_code",
-            "capabilities", "curtain_state",
+            "capabilities", "curtain_state", "presentation", "ha_mode", "chapter_id",
             "audio_tracks", "subtitle_tracks", "selected_audio_id", "selected_subtitle_id", "subtitles_off",
         ]}}
 
@@ -174,7 +217,7 @@ class CinemaSeatPlayer(MediaPlayerEntity):
         self.pending[command_id] = {
             "future": future, "boot": (state or {}).get("boot_id"),
             "accepted_ok": action.endswith("chapter_current") or action in {
-                "select_audio_current", "select_subtitle_current"}, "operation": operation,
+                "select_audio_current", "select_subtitle_current", "seek_current", "advance_sequence"}, "operation": operation,
         }
         command = {
             "version": 1, "command_id": command_id, "player_id": self.entry.data["player_id"],
@@ -199,7 +242,7 @@ class CinemaSeatPlayer(MediaPlayerEntity):
         text = query.search_query.strip()
         if not text or len(text) > 128:
             raise SearchError("Enter a film title of 1–128 characters")
-        if query.media_content_type not in (None, MediaType.MOVIE, "cinemaseat"):
+        if query.media_content_type not in (None, MediaType.MOVIE, "cinemaseat", "cinemaseat_nas", "cinemaseat_plex"):
             return SearchMedia(result=[])
         if query.media_filter_classes and MediaClass.MOVIE not in query.media_filter_classes:
             return SearchMedia(result=[])
@@ -208,13 +251,14 @@ class CinemaSeatPlayer(MediaPlayerEntity):
                 state = (await self._request("get_state"))["state"]
                 if "search_movies" not in state.get("capabilities", []):
                     raise HomeAssistantError("Update CinemaSeat on the connected player to enable search")
-                reply = await self._request("search_movies", state, query=text)
+                reply = await self._request("search_movies", state, query=text,
+                                            source={"cinemaseat_nas": "nas", "cinemaseat_plex": "plex"}.get(query.media_content_type, "all"))
             except HomeAssistantError as err:
                 raise SearchError(str(err)) from err
         return SearchMedia(result=[BrowseMedia(
             media_class=MediaClass.MOVIE, media_content_type=MediaType.MOVIE,
             media_content_id=movie["id"],
-            title=movie["title"] + (f" ({movie['year']})" if movie.get("year") else ""),
+            title=movie["title"] + (f" ({movie['year']})" if movie.get("year") else "") + (" [NAS]" if movie["id"].startswith("nas:") else " [Plex]"),
             can_play=True, can_expand=False,
         ) for movie in reply.get("movies", [])])
 
@@ -324,6 +368,41 @@ class CinemaSeatPlayer(MediaPlayerEntity):
                     with suppress(HomeAssistantError):
                         await self._request("release_control", state, control_id=control, timeout=8)
 
+    async def async_prepare_sequence(self, movie_id, audio_id=None, subtitle_id=None, subtitles_off=True):
+        async with self.command_lock:
+            state = (await self._request("get_state"))["state"]
+            if "prepare_sequence" not in state.get("capabilities", []):
+                raise HomeAssistantError("Update CinemaSeat to use Play Sequence")
+            if not movie_id.startswith("nas:"):
+                raise HomeAssistantError("Play Sequence requires an indexed NAS film")
+            reply = await self._request("prepare_sequence", state, movie_id=movie_id, audio_id=audio_id,
+                                        subtitle_id=subtitle_id, subtitles_off=subtitles_off)
+            return {"presentation_id": (reply.get("state", {}).get("presentation") or {}).get("id")}
+
+    async def async_start_sequence(self, presentation_id):
+        async with self.command_lock:
+            state = (await self._request("get_state"))["state"]
+            if (state.get("presentation") or {}).get("id") != presentation_id:
+                raise HomeAssistantError("The presentation changed; this release has expired")
+            await self._request("start_sequence", state, presentation_id=presentation_id)
+
+    async def async_advance_sequence(self):
+        async with self.command_lock:
+            state = (await self._request("get_state"))["state"]
+            presentation = state.get("presentation") or {}
+            if not presentation.get("id"):
+                raise HomeAssistantError("No current sequence")
+            await self._request("advance_sequence", state, presentation_id=presentation["id"])
+
+    async def async_media_seek(self, position):
+        if not isinstance(position, (int, float)) or not math.isfinite(position) or position < 0:
+            raise HomeAssistantError("Enter a valid timecode in seconds")
+        async with self.command_lock:
+            state = (await self._request("get_state"))["state"]
+            if "seek_current" not in state.get("capabilities", []):
+                raise HomeAssistantError("Update CinemaSeat to use Move to Timecode")
+            await self._request("seek_current", state, position=position)
+
     async def async_show_curtain(self, show=True):
         async with self.command_lock:
             state = (await self._request("get_state"))["state"]
@@ -337,6 +416,18 @@ class CinemaSeatPlayer(MediaPlayerEntity):
         async with self.command_lock:
             state = (await self._request("get_state"))["state"]
             status = state.get("status")
+            presentation = state.get("presentation") or {}
+            if presentation.get("id"):
+                if action == "stop_current":
+                    await self._request(action, state, presentation_id=presentation["id"])
+                    return
+                if action == "play" and presentation.get("waiting_for_ha"):
+                    raise HomeAssistantError("Use Start Sequence with the presentation ID to release this wait point")
+                if presentation.get("phase") != "movie":
+                    if action == "next_chapter_current":
+                        await self._request("advance_sequence", state, presentation_id=presentation["id"])
+                        return
+                    raise HomeAssistantError("This control is available during the feature; use Skip sequence step for preroll")
             if not state.get("session_id") or status in {"idle", "stopped", "ended", "error"}:
                 if action == "stop_current":
                     return

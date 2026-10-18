@@ -69,6 +69,8 @@ test('curtain toggle follows selected player, confirmed state and capability',as
  assert.equal(card.shadowRoot.querySelector('#showCurtain').disabled,true);
  hass.states[b].attributes.status='idle';hass.states[b].attributes.capabilities=[];card.hass=hass;
  assert.equal(card.shadowRoot.querySelector('#showCurtain').disabled,true);
+ assert.equal(card.shadowRoot.querySelector('#showCurtain').hidden,true);
+ const count=calls.length;await card._showCurtain();assert.equal(calls.length,count);
 });
 
 function movieChoices(card) {
@@ -79,7 +81,7 @@ function movieChoices(card) {
 }
 test('automation saves current player and choices, curtain then ten-second delay, with no boot ID or immediate playback',async()=>{
  const {card,hass,select,calls}=fixture();select(b);movieChoices(card);
- hass.states[b].attributes.curtain_state='closed';card.hass=hass;
+ hass.states[b].attributes.curtain_state='closed';hass.states[b].attributes.capabilities=['show_curtain'];card.hass=hass;
  const saved=[];hass.callApi=async(...args)=>saved.push(JSON.parse(JSON.stringify(args)));
  await card._makeAutomation();
  assert.equal(saved[0][0],'POST');assert.match(saved[0][1],/^config\/automation\/config\/cinemaseat_[a-f0-9]{32}$/);
@@ -91,8 +93,9 @@ test('automation saves current player and choices, curtain then ten-second delay
  assert.match(card.shadowRoot.querySelector('#message a').getAttribute('href'),/^\/config\/automation\/edit\/cinemaseat_/);
  await card._makeAutomation();assert.notEqual(saved[0][1],saved[1][1]);
 });
-test('without curtain, automation only plays film with default audio and subtitles off',async()=>{
+test('without curtain capability, stale curtain state cannot add a curtain to automations',async()=>{
  const {card,hass}=fixture();movieChoices(card);
+ hass.states[a].attributes.curtain_state='closed';card.hass=hass;
  card.shadowRoot.querySelector('#startAudio').value='';card.shadowRoot.querySelector('#startSubtitle').value='';
  let saved;hass.callApi=async(method,path,config)=>saved=JSON.parse(JSON.stringify(config));
  await card._makeAutomation();assert.equal(saved.actions.length,1);
@@ -112,4 +115,26 @@ test('automation creation locks selection, prevents duplicate clicks, and restor
  assert.equal(card.shadowRoot.querySelector('#makeAutomation').disabled,true);
  await card._makeAutomation();assert.equal(writes,1);
  assert.match(card.shadowRoot.querySelector('#message').textContent,/administrator/);
+});
+
+test('NAS source, sequence with tracks and timecode commands follow the chosen player',async()=>{
+ const {card,calls,hass,select}=fixture();select(b);
+ const attributes=hass.states[b].attributes;
+ attributes.capabilities=['prepare_sequence','seek_current'];attributes.ha_mode=true;
+ attributes.status='idle';card.hass=hass;
+ card.shadowRoot.querySelector('#source').value='nas';card.shadowRoot.querySelector('form input').value='Film';
+ await card._search();assert.equal(calls.at(-1).media_content_type,'cinemaseat_nas');
+ await card._prepareSequence({media_content_id:'nas:feature'}, {audio_id:'audio-nl',subtitles_off:true});
+ assert.equal(calls.at(-1).service,'prepare_sequence');assert.equal(calls.at(-1).target.entity_id,b);
+ assert.equal(calls.at(-1).service_data.audio_id,'audio-nl');
+ attributes.status='playing';attributes.presentation={id:'show',lead:'ha',phase:'movie',waiting_for_ha:false};card.hass=hass;
+ card.shadowRoot.querySelector('#timecode').value='01:02:03';await card._moveTimecode();
+ assert.equal(calls.at(-1).service,'media_seek');assert.equal(calls.at(-1).service_data.seek_position,3723);
+ const count=calls.length;card.shadowRoot.querySelector('#timecode').value='01:99:01';await card._moveTimecode();
+ assert.equal(calls.length,count);
+ attributes.presentation.phase='trailer';card.hass=hass;
+ assert.equal(card.shadowRoot.querySelector('#moveTimecode').disabled,true);
+ attributes.ha_mode=false;card.hass=hass;
+ assert.equal(card.shadowRoot.querySelector('#skipSequence').disabled,true);
+ assert.equal(card.shadowRoot.querySelector('[data-service="media_stop"]').disabled,true);
 });

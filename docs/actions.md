@@ -1,3 +1,5 @@
+> Version 0.8.0 adds NAS Play Sequence and two-mode presentation control. See [current sequence actions, events and handshake](sequence-control.md). Standalone curtain instructions below apply to older ATV builds; the current app uses the curtain only in Play Sequence.
+
 # Actions
 
 Use your actual CinemaSeat entity ID in place of `media_player.cinemaseat_apple_tv`. Film and track IDs belong to your library; obtain them through search and movie details rather than copying IDs from someone else's setup.

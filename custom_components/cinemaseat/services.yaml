@@ -64,3 +64,50 @@ show_curtain:
       default: true
       selector:
         boolean:
+
+prepare_sequence:
+  name: Prepare Play Sequence
+  description: Prepare an indexed NAS film and emit prepare_start_sequence. A separate Start Sequence action releases the presentation.
+  target:
+    entity:
+      integration: cinemaseat
+      domain: media_player
+  fields:
+    movie_id:
+      name: NAS film ID
+      required: true
+      selector:
+        text:
+    audio_id:
+      name: Audio track ID
+      selector:
+        text:
+    subtitle_id:
+      name: Subtitle track ID
+      selector:
+        text:
+    subtitles_off:
+      name: Subtitles off
+      default: true
+      selector:
+        boolean:
+start_sequence:
+  name: Start Sequence
+  description: Release only the presentation identified by the triggering prepare_start_sequence event. Playback begins when local preparation is ready.
+  target:
+    entity:
+      integration: cinemaseat
+      domain: media_player
+  fields:
+    presentation_id:
+      name: Presentation ID from the prepare event
+      required: true
+      selector:
+        text:
+advance_sequence:
+  name: Skip sequence step
+  description: Start a ready opening or skip the current preroll clip. Does not bypass a pending HA release or seek within a bumper.
+  target:
+    entity:
+      integration: cinemaseat
+      domain: media_player

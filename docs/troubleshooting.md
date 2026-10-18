@@ -1,3 +1,5 @@
+> Version 0.8.0 adds NAS Play Sequence and two-mode presentation control. See [current sequence actions, events and handshake](sequence-control.md). Standalone curtain instructions below apply to older ATV builds; the current app uses the curtain only in Play Sequence.
+
 # Troubleshooting
 
 - **No pairing code / could not connect:** keep HA's Add integration → CinemaSeat form open before requesting a code on the TV. Check the HA address/port and reachability from the Apple TV. Enter HA's address, not a Plex or former MQTT broker address.

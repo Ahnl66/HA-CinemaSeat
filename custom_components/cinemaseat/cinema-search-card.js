@@ -31,9 +31,13 @@ class CinemaSeatSearchCard extends HTMLElement {
             <button data-service="media_stop">Stop</button>
             <button data-service="media_previous_track">Previous chapter</button>
             <button data-service="media_next_track">Next chapter</button>
+            <button id="skipSequence">Skip sequence step</button>
           </div>
         </section>
+
+        <label for="source">Library source</label><select id="source"><option value="all">Plex and NAS</option><option value="nas">NAS</option><option value="plex">Plex</option></select>
         <form><input aria-label="Film title" placeholder="Search for a film…" maxlength="128" required><button type="submit">Search</button></form>
+        <div class="controls"><input id="timecode" aria-label="Move to Timecode" placeholder="HH:MM:SS" inputmode="numeric"><button id="moveTimecode">Move to Timecode</button></div>
         <p class="hint">Open CinemaSeat and select the HA icon on your player. Stop the current film before starting another. Use Options to choose audio and subtitles before starting.</p>
         <div id="message" role="status" aria-live="polite"></div><div id="results"></div>
         <section id="selection" class="tracks" hidden>
@@ -42,9 +46,10 @@ class CinemaSeatSearchCard extends HTMLElement {
           <label for="startSubtitle">Subtitles before start</label><select id="startSubtitle"></select>
           <div class="controls">
             <button id="startSelected">Start with these choices</button>
+            <button id="sequenceSelected">Play Sequence with these choices</button>
             <button id="makeAutomation">Make automation with these choices</button>
           </div>
-          <p class="hint">Run the automation manually or add a trigger in Home Assistant. If Show curtain is active, it shows the curtain and waits 10 seconds before starting.</p>
+          <p class="hint">Run the automation manually or add a trigger in Home Assistant. Play Sequence waits for the HA script to release the presentation with Start Sequence.</p>
         </section>
         <section id="currentTracks" class="tracks" hidden>
           <h3 id="currentTitle">Current film tracks</h3>
@@ -64,6 +69,15 @@ class CinemaSeatSearchCard extends HTMLElement {
       this._play({title:this._selection.title,media_content_id:this._selection.id},
         {audio_id:audio||null,subtitle_id:subtitle||null,subtitles_off:!subtitle,boot_id:this._selection.boot_id});
     });
+    this.shadowRoot.querySelector("#sequenceSelected").addEventListener("click",()=>{
+      if (!this._selection) return;
+      const audio=this.shadowRoot.querySelector("#startAudio").value;
+      const subtitle=this.shadowRoot.querySelector("#startSubtitle").value;
+      this._prepareSequence({title:this._selection.title,media_content_id:this._selection.id},
+        {audio_id:audio||undefined,subtitle_id:subtitle||undefined,subtitles_off:!subtitle});
+    });
+    this.shadowRoot.querySelector("#skipSequence").addEventListener("click",()=>this._sequenceAction("advance_sequence"));
+    this.shadowRoot.querySelector("#moveTimecode").addEventListener("click",()=>this._moveTimecode());
     this.shadowRoot.querySelector("#makeAutomation").addEventListener("click",()=>this._makeAutomation());
     this.shadowRoot.querySelector("#showCurtain").addEventListener("click",()=>this._showCurtain());
     for (const button of this.shadowRoot.querySelectorAll("button[data-service]")) {
@@ -99,13 +113,18 @@ class CinemaSeatSearchCard extends HTMLElement {
     if (this._selection&&attributes.boot_id&&this._selection.boot_id!==attributes.boot_id) {
       this._selection=null;this._renderSelection();
     }
-    this.shadowRoot.querySelector("input").disabled=this._busy||unavailable;
-    this.shadowRoot.querySelector("form button").disabled=this._busy||unavailable;
+    this.shadowRoot.querySelector("form input").disabled=this._busy||unavailable||attributes.ha_mode===false;
+    this.shadowRoot.querySelector("form button").disabled=this._busy||unavailable||attributes.ha_mode===false;
+    this.shadowRoot.querySelector("#source").disabled=this._busy||unavailable||attributes.ha_mode===false;
     select.disabled=this._busy;
-    const active=!["idle","stopped","ended","error"].includes(attributes.status);
+    const active=!!attributes.presentation||!["idle","stopped","ended","error"].includes(attributes.status);
     for (const button of this.shadowRoot.querySelectorAll("button.play")) button.disabled=this._busy||unavailable||active;
     for (const button of this.shadowRoot.querySelectorAll("button.details")) button.disabled=this._busy||unavailable;
-    this.shadowRoot.querySelector("#startSelected").disabled=this._busy||unavailable||active;
+    this.shadowRoot.querySelector("#startSelected").disabled=this._busy||unavailable||active||attributes.ha_mode===false;
+    const sequence=this.shadowRoot.querySelector("#sequenceSelected");
+    sequence.hidden=!this._selection?.id?.startsWith("nas:")||!(attributes.capabilities||[]).includes("prepare_sequence");
+    sequence.disabled=this._busy||unavailable||active||attributes.ha_mode===false;
+    for (const button of this.shadowRoot.querySelectorAll("button.sequence")) button.disabled=this._busy||unavailable||active||attributes.ha_mode===false;
     const automation=this.shadowRoot.querySelector("#makeAutomation");
     automation.disabled=this._busy||unavailable||!this._selection||!this._hass.user?.is_admin;
     automation.title=this._hass.user?.is_admin ? "Save these choices as a reusable automation" : "A Home Assistant administrator is required to create automations";
@@ -121,19 +140,26 @@ class CinemaSeatSearchCard extends HTMLElement {
     this.shadowRoot.querySelector("#playbackState").textContent=
       [attributes.media_title,status].filter(Boolean).join(" · ");
     const curtain=this.shadowRoot.querySelector("#showCurtain");
+    curtain.hidden=!(attributes.capabilities||[]).includes("show_curtain");
     curtain.setAttribute("aria-pressed",String(attributes.curtain_state==="closed"));
     curtain.disabled=this._busy||unavailable||!["idle","stopped","ended","error"].includes(status)||
       !(attributes.capabilities||[]).includes("show_curtain");
     curtain.title=(attributes.capabilities||[]).includes("show_curtain") ?
       "Show or hide the closed curtain before starting a film" : "Update the CinemaSeat tvOS app to use Show curtain";
+    const presentation=attributes.presentation;
+    const preroll=!!presentation&&presentation.phase!=="movie";
+    this.shadowRoot.querySelector("#skipSequence").hidden=!preroll;
+    this.shadowRoot.querySelector("#skipSequence").disabled=this._busy||unavailable||attributes.ha_mode===false||!!presentation?.waiting_for_ha;
+    this.shadowRoot.querySelector("#moveTimecode").disabled=this._busy||unavailable||attributes.ha_mode===false||preroll||!["playing","paused"].includes(status)||!(attributes.capabilities||[]).includes("seek_current");
+    if (presentation) this.shadowRoot.querySelector("#playbackState").textContent += ` · ${presentation.lead.toUpperCase()} · ${presentation.phase}${presentation.waiting_for_ha?" · Waiting for HA release":""}`;
     const current=!!attributes.session_id&&!['idle','stopped','ended','error'].includes(status);
     for (const button of this.shadowRoot.querySelectorAll("button[data-service]")) {
       const service=button.dataset.service;
-      let allowed=current;
+      let allowed=current||service==="media_stop"&&!!presentation;
       if (service==="media_play") allowed=current&&["ready","paused"].includes(status);
       else if (service==="media_pause") allowed=current&&status==="playing";
       else if (service!=="media_stop") allowed=current&&["playing","paused"].includes(status);
-      button.disabled=this._busy||unavailable||!allowed;
+      button.disabled=this._busy||unavailable||!allowed||attributes.ha_mode===false;
     }
   }
   async _showCurtain() {
@@ -177,7 +203,7 @@ class CinemaSeatSearchCard extends HTMLElement {
   }
   _renderCurrent(attributes,unavailable) {
     const section=this.shadowRoot.querySelector("#currentTracks");
-    const current=["playing","paused"].includes(attributes.status);
+    const current=["playing","paused"].includes(attributes.status)&&(!attributes.presentation||attributes.presentation.phase==="movie");
     section.hidden=!current;
     if (!current) return;
     this.shadowRoot.querySelector("#currentTitle").textContent="Tracks: "+(attributes.media_title||"current film");
@@ -187,27 +213,34 @@ class CinemaSeatSearchCard extends HTMLElement {
       audio.options[0].disabled=true;
       this._fillSelect(subtitle,attributes.subtitle_tracks||[],attributes.subtitles_off?"":attributes.selected_subtitle_id,"Off");
     }
-    audio.disabled=this._busy||unavailable||attributes.owner!=="local"||!(attributes.audio_tracks||[]).length;
-    subtitle.disabled=this._busy||unavailable||attributes.owner!=="local"||!Array.isArray(attributes.subtitle_tracks);
+    audio.disabled=this._busy||unavailable||attributes.ha_mode===false||attributes.owner!=="local"||!(attributes.audio_tracks||[]).length;
+    subtitle.disabled=this._busy||unavailable||attributes.ha_mode===false||attributes.owner!=="local"||!Array.isArray(attributes.subtitle_tracks);
   }
   _message(text,error=false) {const el=this.shadowRoot.querySelector("#message");el.textContent=text;el.classList.toggle("error",error);}
   _renderResults() {
     this.shadowRoot.querySelector("#results").replaceChildren(...this._results.map(movie=>{
       const row=document.createElement("div");row.className="result";
       const name=document.createElement("div");name.className="name";name.textContent=movie.title;
-      const detail=document.createElement("small");detail.textContent="Film ID: "+movie.media_content_id;name.append(detail);
+      const detail=document.createElement("small");detail.textContent=(movie.media_content_id.startsWith("nas:")?"NAS":"Plex")+" · Film ID: "+movie.media_content_id;name.append(detail);
       const options=document.createElement("button");options.className="details";options.textContent="Options";
       options.setAttribute("aria-label","Options "+movie.title);options.addEventListener("click",()=>this._details(movie));
       const start=document.createElement("button");start.className="play";start.textContent="Start";
       start.setAttribute("aria-label","Start "+movie.title);start.addEventListener("click",()=>this._play(movie));
-      row.append(name,options,start);return row;
+      row.append(name,options,start);
+      if (movie.media_content_id.startsWith("nas:")) {
+        const sequence=document.createElement("button");sequence.className="sequence";sequence.textContent="Play Sequence";
+        sequence.addEventListener("click",()=>this._prepareSequence(movie));row.append(sequence);
+      }
+      return row;
     }));
   }
   async _search() {
-    const query=this.shadowRoot.querySelector("input").value.trim();if (this._busy||!query) return;
+    const query=this.shadowRoot.querySelector("form input").value.trim();if (this._busy||!query) return;
     this._busy=true;this._results=[];this._selection=null;this._renderResults();this._renderSelection();this._update();this._message("Search…");
     try {
-      const response=await this._hass.callWS({type:"media_player/search_media",entity_id:this._entity(),search_query:query});
+      const source=this.shadowRoot.querySelector("#source").value;
+      const response=await this._hass.callWS({type:"media_player/search_media",entity_id:this._entity(),search_query:query,
+        ...(source!=="all"?{media_content_type:"cinemaseat_"+source}:{})});
       this._results=response.result||[];this._renderResults();
       this._message(this._results.length?`${this._results.length} film(s) found.${this._results.length===50?" Maximum 50 results; refine your search.":""}`:"No films found.");
     } catch (err) {this._message(err.message||String(err),true);}
@@ -229,7 +262,8 @@ class CinemaSeatSearchCard extends HTMLElement {
     const entity=this._entity(),audio=this.shadowRoot.querySelector("#startAudio").value;
     const subtitle=this.shadowRoot.querySelector("#startSubtitle").value;
     const actions=[];
-    if (this._hass.states[entity]?.attributes.curtain_state==="closed") {
+    if ((this._hass.states[entity]?.attributes.capabilities||[]).includes("show_curtain") &&
+        this._hass.states[entity]?.attributes.curtain_state==="closed") {
       actions.push({action:"cinemaseat.show_curtain",target:{entity_id:entity},data:{show:true}});
       actions.push({delay:{seconds:10}});
     }
@@ -255,6 +289,33 @@ class CinemaSeatSearchCard extends HTMLElement {
       const link=document.createElement("a");link.href=`/config/automation/edit/${id}`;link.textContent="Open automation";
       this.shadowRoot.querySelector("#message").append(" ",link);
     } catch (err) {this._message(err.message||err.body?.message||String(err),true);}
+    finally {this._busy=false;this._update();}
+  }
+  async _sequenceAction(service, data={}) {
+    if (this._busy) return;
+    this._busy=true;this._update();
+    try {
+      await this._hass.callWS({type:"call_service",domain:"cinemaseat",service,
+        target:{entity_id:this._entity()},service_data:data});
+      this._message(service==="prepare_sequence"?"Sequence requested. The HA script releases its start.":"Sequence command sent.");
+    } catch(err) {this._message(err.message||String(err),true);}
+    finally {this._busy=false;this._update();}
+  }
+  async _prepareSequence(movie, tracks={}) {
+    await this._sequenceAction("prepare_sequence",{movie_id:movie.media_content_id,...tracks});
+  }
+  async _moveTimecode() {
+    if (this._busy||this.shadowRoot.querySelector("#moveTimecode").disabled) return;
+    const value=this.shadowRoot.querySelector("#timecode").value.trim();
+    if (!/^\d+:([0-5]\d):([0-5]\d)$/.test(value)) {this._message("Use HH:MM:SS.",true);return;}
+    const [h,m,s]=value.split(":").map(Number),position=h*3600+m*60+s;
+    if (!Number.isFinite(position)) return;
+    this._busy=true;this._update();
+    try {
+      await this._hass.callWS({type:"call_service",domain:"media_player",service:"media_seek",
+        target:{entity_id:this._entity()},service_data:{seek_position:position}});
+      this._message("Timecode requested. The player confirms its position.");
+    } catch(err) {this._message(err.message||String(err),true);}
     finally {this._busy=false;this._update();}
   }
   async _play(movie,extra={}) {

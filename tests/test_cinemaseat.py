@@ -214,10 +214,61 @@ class CinemaSeatTests(unittest.IsolatedAsyncioTestCase):
     async def test_search_preserves_playback_and_distinguishes_versions(self):
         self.broker.state.update(status="playing", session_id="existing", owner="local")
         result = await self.player.async_search_media(SearchMediaQuery(search_query="title"))
-        self.assertEqual([r.title for r in result.result], ["Same title (1954)","Same title (2026)"])
+        self.assertEqual([r.title for r in result.result], ["Same title (1954) [Plex]","Same title (2026) [Plex]"])
         self.assertEqual([r.media_content_id for r in result.result], ["1","2"])
         self.assertEqual([c["action"] for c in self.broker.commands], ["get_state","search_movies"])
         self.assertEqual(self.broker.state["session_id"], "existing")
+
+    async def test_nas_source_filter_is_forwarded(self):
+        self.broker.movies = [{"id": "nas:one", "title": "NAS movie"}]
+        result = await self.player.async_search_media(SearchMediaQuery(search_query="movie", media_content_type="cinemaseat_nas"))
+        self.assertEqual(self.broker.commands[-1]["source"], "nas")
+        self.assertTrue(result.result[0].title.endswith("[NAS]"))
+
+    async def test_events_are_correlated_and_deduplicated(self):
+        events = []
+        self.player.entity_id = "media_player.test"
+        self.player.hass.bus = SimpleNamespace(async_fire=lambda event_type, data: events.append((event_type, data)))
+        presentation = {"id": "show-1", "movie_id": "nas:film", "lead": "cs", "phase": "preparing"}
+        self.player.snapshot = {"boot_id": "boot-1", "presentation": presentation}
+        event = {"version": 1, "player_id": "test-player", "boot_id": "boot-1", "sequence": 2,
+                 "event": "prepare_start_sequence", "presentation": presentation, "state": {"position": 0}}
+        self.player.receive_frame({"type": "event", "event": event})
+        self.player.receive_frame({"type": "event", "event": event})
+        self.player.receive_frame({"type": "event", "event": {**event, "sequence": 3, "boot_id": "old"}})
+        self.player.receive_frame({"type": "event", "event": {**event, "sequence": 4, "presentation": {**presentation, "id": "old"}}})
+        self.player.receive_frame({"type": "event", "event": {**event, "sequence": 5, "event": "stateChanged"}})
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0][0], "cinemaseat_event")
+        self.assertEqual(events[0][1]["presentation_id"], "show-1")
+        self.player.receive_frame({"type": "event", "event": {**event, "sequence": 6, "event": "timecode", "state": {"position": 50, "duration": 100}}})
+        self.assertEqual(events[-1][1]["position"], 50)
+
+    async def test_start_sequence_requires_exact_presentation(self):
+        self.broker.state["presentation"] = {"id": "show-1", "waiting_for_ha": True}
+        with self.assertRaises(HomeAssistantError):
+            await self.player.async_start_sequence("old-show")
+        self.assertNotIn("start_sequence", [c["action"] for c in self.broker.commands])
+        await self.player.async_start_sequence("show-1")
+        self.assertEqual(self.broker.commands[-1]["presentation_id"], "show-1")
+
+    async def test_prepare_sequence_is_separate_from_release(self):
+        self.broker.state["capabilities"].append("prepare_sequence")
+        await self.player.async_prepare_sequence("nas:film")
+        self.assertEqual([c["action"] for c in self.broker.commands], ["get_state", "prepare_sequence"])
+        self.assertNotIn("claim_control", [c["action"] for c in self.broker.commands])
+
+    async def test_seek_and_preroll_stop_use_current_identity(self):
+        self.broker.state.update(session_id="feature-1", status="playing")
+        self.broker.state["capabilities"].append("seek_current")
+        await self.player.async_media_seek(125)
+        self.assertEqual((self.broker.commands[-1]["action"], self.broker.commands[-1]["position"]), ("seek_current", 125))
+        for position in [float("nan"), float("inf"), -1]:
+            with self.assertRaises(HomeAssistantError):
+                await self.player.async_media_seek(position)
+        self.broker.state.update(session_id=None, status="preparing", presentation={"id": "show-1", "phase": "preparing"})
+        await self.player.async_media_stop()
+        self.assertEqual(self.broker.commands[-1]["presentation_id"], "show-1")
 
     async def test_no_results_and_invalid_query(self):
         self.broker.movies=[]

@@ -14,7 +14,7 @@ from homeassistant.helpers import config_validation as cv, service
 from .transport import PlayerHub, CinemaSeatPlayerView
 
 DOMAIN = "cinemaseat"
-SERVICES = ("movie_details", "select_audio", "select_subtitle", "show_curtain")
+SERVICES = ("movie_details", "select_audio", "select_subtitle", "show_curtain", "prepare_sequence", "start_sequence", "advance_sequence")
 
 
 class CinemaSeatCardView(HomeAssistantView):
@@ -38,6 +38,20 @@ class CinemaSeatCardView(HomeAssistantView):
 
 def _register_services(hass):
     """Register actions when the first player is loaded."""
+    service.async_register_platform_entity_service(
+        hass, DOMAIN, "prepare_sequence", entity_domain="media_player",
+        schema={vol.Required("movie_id"): cv.string, vol.Optional("audio_id"): cv.string,
+                vol.Optional("subtitle_id"): cv.string, vol.Optional("subtitles_off", default=True): cv.boolean},
+        func="async_prepare_sequence", supports_response=SupportsResponse.OPTIONAL,
+    )
+    service.async_register_platform_entity_service(
+        hass, DOMAIN, "start_sequence", entity_domain="media_player",
+        schema={vol.Required("presentation_id"): cv.string}, func="async_start_sequence",
+    )
+    service.async_register_platform_entity_service(
+        hass, DOMAIN, "advance_sequence", entity_domain="media_player",
+        schema={}, func="async_advance_sequence",
+    )
     service.async_register_platform_entity_service(
         hass, "cinemaseat", "show_curtain", entity_domain="media_player",
         schema={vol.Optional("show", default=True): cv.boolean}, func="async_show_curtain",

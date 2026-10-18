@@ -1,3 +1,5 @@
+> Version 0.8.0 adds NAS Play Sequence and two-mode presentation control. See [current sequence actions, events and handshake](sequence-control.md). Standalone curtain instructions below apply to older ATV builds; the current app uses the curtain only in Play Sequence.
+
 # Direct protocol and pairing
 
 The tvOS app connects to `/api/cinemaseat/player` on the configured HA server using a direct WebSocket (WS for HTTP, WSS for HTTPS). HA does not connect to Plex and never receives Plex tokens, server headers, or authenticated stream URLs. No MQTT broker is involved in version 0.5.0.

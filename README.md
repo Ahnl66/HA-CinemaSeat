@@ -4,7 +4,7 @@ Search and control films in the CinemaSeat Apple TV app from Home Assistant. Cho
 
 **Pair using six digits.** Enter your HA address and port on the Apple TV, then enter the temporary code shown on the TV in Home Assistant. The player ID and a permanent connection key are transferred automatically. You never need to type a long password.
 
-**Search runs on the Apple TV:** Home Assistant → direct WebSocket → CinemaSeat → Plex. HA does not connect to Plex or need a Plex token. MQTT is not required. CinemaSeat remains one tvOS app with normal browsing and an HA mode.
+**Search runs on the Apple TV:** Home Assistant → direct WebSocket → CinemaSeat → Plex or its local NAS index. HA does not connect to Plex or need a Plex token. MQTT is not required. CinemaSeat remains one tvOS app with normal browsing and an HA mode.
 
 ## Requirements
 
@@ -47,7 +47,7 @@ The MQTT integration/broker can remain for other devices. If MQTT is loaded duri
 In your HA profile, enable **Advanced mode** if Resources is hidden. In **Settings → Dashboards → ⋮ → Resources**, add this **JavaScript module**:
 
 ```text
-/cinemaseat/cinema-search-card.js?v=0.7.0
+/cinemaseat/cinema-search-card.js?v=0.8.0
 ```
 
 Add a manual card, replacing the entity with your paired CinemaSeat player:
@@ -59,9 +59,11 @@ entity: media_player.cinemaseat_apple_tv
 
 The player selector lists configured CinemaSeat players; restrict it with an optional `entities` list. A custom `title` is supported. Playback, pause, stop, chapter buttons, and audio/subtitle choices are built into this card. All controls follow the selected player. Use the complete [example dashboard](examples/dashboard.yaml) without adding separate playback buttons.
 
-**Show curtain** displays the closed curtain on the selected player before a film. Press it again to hide it. Starting a film opens the same curtain animation used in normal browsing. HA mode ignores the app’s normal curtain setting; each new HA mode session begins with its connection screen. Update the CinemaSeat app as well as this integration for this feature.
+**Play Sequence** prepares an indexed NAS film with the configured curtain, intros, trailer and bumpers. CinemaSeat emits Prepare Start Sequence and waits until your HA script calls `cinemaseat.start_sequence` with that presentation ID. Direct Start remains independent and starts without this handshake. The current ATV app no longer supports standalone Show curtain; old scripts using it must be updated.
 
-**Make automation with these choices** saves a new automation named `CinemaSeat - <film title>` for the selected player, audio and subtitles. If Show curtain is active when you create it, the actions show the curtain, wait 10 seconds, then start the film. Otherwise it starts the film directly. Creation does not start playback. The automation has no trigger: run it manually or use **Open automation** to add a trigger. HA administrator access is required. Each click creates a separate automation and does not overwrite an existing one. Saved automations work after the player restarts; HA mode must be active when running them.
+**Two modes:** in normal CS mode, a local Play Sequence can notify HA and optionally wait for release while CS retains control. In HA mode, HA requests the presentation and may also control it, alongside the ATV remote. Use **Skip sequence step** during preroll and **Move to Timecode** (HH:MM:SS) during the feature. [Sequence control, events and script examples](docs/sequence-control.md).
+
+**Make automation with these choices** saves a new automation named `CinemaSeat - <film title>` for the selected player, audio and subtitles. With the current ATV app this creates a direct film-start automation. Use the separate Play Sequence action and release script for a full presentation. Older apps can still expose their legacy curtain capability. Creation does not start playback. The automation has no trigger: run it manually or use **Open automation** to add a trigger. HA administrator access is required. Each click creates a separate automation and does not overwrite an existing one. Saved automations work after the player restarts; HA mode must be active when running them.
 
 Search a title, then choose **Start** on the intended film version. Use **Options** to choose audio/subtitles first. During playback, selectors change the current film's tracks or turn subtitles off. Actual selection is confirmed by player feedback.
 
@@ -69,10 +71,10 @@ Search is case/accent insensitive, accepts 1–128 characters, and returns up to
 
 ## HA mode and reconnect
 
-- **Back before playback:** return to normal browsing from the HA connection screen or a closed curtain, cancel any preparation, and clear the curtain. Update the tvOS app for reliable Back handling on these screens.
+- **Back before playback:** return to normal browsing from the HA connection screen and cancel direct film preparation. A sequence has its own Cancel action. Update the tvOS app for reliable Back handling on these screens.
 - **Playing/paused:** remain in HA mode.
 - **After stop, end, or playback error:** Back can return to normal browsing.
-- Cold app launches start in normal mode. Leaving HA mode or backgrounding the app disconnects control.
+- Cold app launches start in normal mode. Leaving HA mode disconnects control. A local sequence temporarily opens its own paired event connection. Backgrounding disconnects either connection.
 - In active HA mode, interrupted connections reconnect automatically. The stored key is reused; another short code is only needed for re-pairing.
 
 ## Update and remove

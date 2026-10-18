@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.0 — 2026-10-18
+
+- Add Plex/NAS source search, NAS Play Sequence and track choices.
+- Add correlated Prepare Start Sequence / Start Sequence handshake for CS-led and HA-led presentations.
+- Publish validated playback/sequence events and feature timecodes to HA.
+- Keep the ATV remote available alongside HA controls; add Skip sequence step and Move to Timecode.
+- Keep direct playback independent of the sequence handshake. Curtains now belong to Play Sequence in the current ATV app.
+- Add protocol, sequence, HA and dashboard regression coverage. Physical Apple TV/HA/NAS validation remains pending.
+
 ## 0.7.0 — 2026-10-14
 
 - Add Make automation with these choices next to Start with these choices.
