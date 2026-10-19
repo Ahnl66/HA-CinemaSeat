@@ -274,3 +274,9 @@ test('live events keep an expanded payload open while new timecodes arrive',()=>
  assert.equal(card.shadowRoot.querySelectorAll('#eventLog details[open]').length,1);
  assert.match(card.shadowRoot.querySelector('#eventLog details[open]').textContent,/start_movie/);
 });
+test('native browse is disabled for a legacy app outside its permitted mode',()=>{
+ const {card,hass}=fixture();hass.states[a].attributes.capabilities=['browse_movies'];hass.states[a].attributes.ha_mode=false;hass.states[a].attributes.can_browse_library=null;card.hass=hass;
+ assert.equal(card.shadowRoot.querySelector('#browseNAS').disabled,true);
+ hass.states[a].attributes.can_browse_library=true;card.hass=hass;
+ assert.equal(card.shadowRoot.querySelector('#browseNAS').disabled,false);
+});

@@ -59,7 +59,7 @@ The MQTT integration/broker can remain for other devices. If MQTT is loaded duri
 In your HA profile, enable **Advanced mode** if Resources is hidden. In **Settings → Dashboards → ⋮ → Resources**, add this **JavaScript module**:
 
 ```text
-/cinemaseat/cinema-search-card.js?v=0.11.0
+/cinemaseat/cinema-search-card.js?v=0.11.1
 ```
 
 Add a manual card, replacing the entity with your paired CinemaSeat player:

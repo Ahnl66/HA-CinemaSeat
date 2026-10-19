@@ -1,8 +1,8 @@
-# CinemaSeat control and test dashboard — 0.11.0
+# CinemaSeat control and test dashboard — 0.11.1
 
 The bundled JavaScript now provides `custom:cinemaseat-dashboard-card`. Existing `custom:cinemaseat-search-card` configurations still work and receive the same controls. There are no extra frontend dependencies, helper entities or automatic room actions.
 
-Register the module `/cinemaseat/cinema-search-card.js?v=0.11.0`. Use a panel view for the complete dashboard; the card handles its own responsive columns and tabs. In an existing multi-card dashboard it can also be used as a normal card. Replace the example entity with the existing CinemaSeat media player; the dashboard's player selector discovers other CinemaSeat players automatically.
+Register the module `/cinemaseat/cinema-search-card.js?v=0.11.1`. Use a panel view for the complete dashboard; the card handles its own responsive columns and tabs. In an existing multi-card dashboard it can also be used as a normal card. Replace the example entity with the existing CinemaSeat media player; the dashboard's player selector discovers other CinemaSeat players automatically.
 
 ## Pages and coverage
 

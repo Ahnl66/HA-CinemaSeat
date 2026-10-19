@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.1 — 2026-10-19
+
+- Keep the current-film overview full width when no poster is available, including idle/disconnected states.
+- Use readable system typography within the card when the surrounding HA theme uses a condensed font.
+- Keep native browse disabled on older app/mode combinations that do not permit it.
+- Verified with 20 frontend regressions; the 0.11.0 dashboard was also installed through HACS and checked live for read-only NAS browsing, native selector discovery and event subscription.
+
 ## 0.11.0 — 2026-10-19
 
 - Replace the search-only layout with a responsive control/test dashboard: Control, Library, Events & tests and Diagnostics. Retain the existing card type; add `cinemaseat-dashboard-card`.
