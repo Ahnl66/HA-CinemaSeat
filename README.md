@@ -59,15 +59,17 @@ The MQTT integration/broker can remain for other devices. If MQTT is loaded duri
 In your HA profile, enable **Advanced mode** if Resources is hidden. In **Settings → Dashboards → ⋮ → Resources**, add this **JavaScript module**:
 
 ```text
-/cinemaseat/cinema-search-card.js?v=0.10.0
+/cinemaseat/cinema-search-card.js?v=0.11.0
 ```
 
 Add a manual card, replacing the entity with your paired CinemaSeat player:
 
 ```yaml
-type: custom:cinemaseat-search-card
-entity: media_player.cinemaseat_apple_tv
+type: custom:cinemaseat-dashboard-card
+entity: media_player.cinemaseat_mac
 ```
+
+The dashboard has **Control**, **Library**, **Events & tests** and **Diagnostics** tabs. It includes native Plex/NAS browsing, film posters, both sequence-preparation routes, exact-presentation release, both track-control routes, a live event monitor, observational timecode tests, all attributes/capabilities and local JSON exports. See the [complete dashboard guide](docs/dashboard.md). Existing `cinemaseat-search-card` configurations also receive these features. A full-width panel-view example is supplied in JSON and YAML.
 
 The player selector lists configured CinemaSeat players; restrict it with an optional `entities` list. A custom `title` is supported. Playback, pause, stop, chapter buttons, and audio/subtitle choices are built into this card. All controls follow the selected player. Use the complete [example dashboard](examples/dashboard.yaml) without adding separate playback buttons.
 
@@ -75,7 +77,7 @@ The player selector lists configured CinemaSeat players; restrict it with an opt
 
 **Two initiators:** CS or HA can start a sequence. A local Play Sequence can notify HA and optionally wait for release. With control allowed, HA and the ATV remote can both control the active sequence. No mode switch is needed. Use **Skip sequence step** during preroll and **Move to Timecode** (HH:MM:SS) during the feature. [Sequence control, events and script examples](docs/sequence-control.md).
 
-**Make automation with these choices** saves a new automation named `CinemaSeat - <film title>` for the selected player, audio and subtitles. With the current ATV app this creates a direct film-start automation. Use the separate Play Sequence action and release script for a full presentation. Older apps can still expose their legacy curtain capability. Creation does not start playback. The automation has no trigger: run it manually or use **Open automation** to add a trigger. HA administrator access is required. Each click creates a separate automation and does not overwrite an existing one. Saved automations work after the player restarts; CinemaSeat must be open with HA control allowed when running them.
+**Make automation with these choices** saves a new automation named `CinemaSeat - <film title>` for the selected player, audio and subtitles. Choose Direct Play or Play Sequence under Saved automation playback. A sequence start still waits for your separate release automation or manual release. Older apps can still expose their legacy curtain capability. Creation does not start playback. The automation has no trigger: run it manually or use **Open automation** to add a trigger. HA administrator access is required. Each click creates a separate automation and does not overwrite an existing one. Saved automations work after the player restarts; CinemaSeat must be open with HA control allowed when running them.
 
 Search a title, then choose **Start** on the intended film version. Use **Options** to choose audio/subtitles first. During playback, selectors change the current film's tracks or turn subtitles off. Actual selection is confirmed by player feedback.
 
@@ -108,6 +110,7 @@ To replace a pairing, open HA's Reconfigure form and choose **Pair again** on th
 
 ## Reference
 
+- [Full dashboard and integration test guide](docs/dashboard.md)
 - [Media player actions, attributes, library and track selectors](docs/media-player.md)
 - [Actions and automation examples](docs/actions.md)
 - [Direct protocol and pairing lifecycle](docs/protocol.md)

@@ -46,7 +46,7 @@ test('pending requests lock the player selector; failures restore controls',asyn
 });
 test('search, film start and track changes share the same player selector',async()=>{
  const {card,calls,select}=fixture();select(b);
- card.shadowRoot.querySelector('input').value='Film';await card._search();assert.equal(calls.at(-1).entity_id,b);
+ card.shadowRoot.querySelector('form input').value='Film';await card._search();assert.equal(calls.at(-1).entity_id,b);
  await card._play({title:'Film',media_content_id:'film-id'});assert.equal(calls.at(-1).target.entity_id,b);
  card.shadowRoot.querySelector('#currentSubtitle').value='';await card._switchTrack('subtitle');
  assert.equal(calls.at(-1).target.entity_id,b);assert.equal(calls.at(-1).service_data.session_id,'session-1');
@@ -144,7 +144,7 @@ test('NAS source, sequence with tracks and timecode commands follow the chosen p
 test('locally started sequence allows transport while new film starts still require HA mode',async()=>{
  const {card,calls,hass}=fixture();const attributes=hass.states[a].attributes;
  attributes.ha_mode=false;attributes.can_control_playback=true;
- attributes.capabilities=['prepare_sequence','seek_current'];
+ attributes.capabilities=['prepare_sequence','seek_current','pause_current','resume_current','stop_current','select_audio_current'];
  attributes.presentation={id:'local-show',lead:'cs',phase:'movie',waiting_for_ha:false};
  card.hass=hass;
  assert.equal(card.shadowRoot.querySelector('[data-service="media_pause"]').disabled,false);
@@ -165,7 +165,7 @@ test('paired library stays readable without a mode; persistent permission gates 
  const {card,calls,hass}=fixture();const attributes=hass.states[a].attributes;
  attributes.ha_mode=false;attributes.remote_control_allowed=false;attributes.can_browse_library=true;
  attributes.can_start_playback=false;attributes.can_control_playback=false;attributes.status='idle';
- attributes.capabilities=['prepare_sequence'];card.hass=hass;
+ attributes.capabilities=['prepare_sequence','pause_current'];card.hass=hass;
  card._results=[{media_content_id:'nas:film',title:'Film'}];card._renderResults();card._update();
  assert.equal(card.shadowRoot.querySelector('form input').disabled,false);
  assert.equal(card.shadowRoot.querySelector('button.play').disabled,true);
@@ -177,4 +177,100 @@ test('paired library stays readable without a mode; persistent permission gates 
  attributes.status='playing';attributes.can_start_playback=false;attributes.can_control_playback=true;card.hass=hass;
  assert.equal(card.shadowRoot.querySelector('button.play').disabled,true);
  assert.equal(card.shadowRoot.querySelector('[data-service="media_pause"]').disabled,false);
+});
+
+test('dashboard tabs, overview and diagnostics follow the selected player without injecting metadata',()=>{
+ const {card,hass,select}=fixture();
+ const attrs=hass.states[b].attributes;attrs.feature_title='<img onerror=alert(1)>';attrs.presentation={id:'show-b',lead:'cs',phase:'trailer',title:'Feature B'};
+ attrs.media_position=12;attrs.media_duration=100;attrs.boot_id='boot-b';attrs.curtain_state='opening';
+ select(b);card._showPage('diagnostics');
+ assert.equal(card.shadowRoot.querySelector('[data-section="diagnostics"]').hidden,false);
+ assert.equal(card.shadowRoot.querySelector('[data-section="control"]').hidden,true);
+ assert.equal(card.shadowRoot.querySelector('#nowTitle').textContent,'<img onerror=alert(1)>');
+ assert.equal(card.shadowRoot.querySelector('#nowTitle img'),null);
+ assert.match(card.shadowRoot.querySelector('#rawState').textContent,/boot-b/);
+ assert.equal(card.shadowRoot.querySelector('#positionText').textContent,'00:00:12');
+ assert.equal(card._imageURL('https://untrusted.invalid/image'),null);
+ assert.equal(card._imageURL('/api/media_player_proxy/test'),'/api/media_player_proxy/test');
+});
+test('browse uses native HA API, paginates and keeps failed back navigation recoverable',async()=>{
+ const {card,calls,hass}=fixture();hass.states[a].attributes.capabilities=['browse_movies'];card.hass=hass;
+ hass.callWS=async req=>{calls.push(req);return {title:req.media_content_id||'Sources',children:[
+  {title:'Film',media_class:'movie',media_content_type:'movie',media_content_id:'nas:film',can_play:true,can_expand:true},
+  {title:'Next page',media_class:'directory',media_content_type:'cinemaseat_library',media_content_id:'nas:30',can_expand:true,can_play:false}]};};
+ await card._browse('cinemaseat_library','nas:0');
+ assert.equal(calls.at(-1).type,'media_player/browse_media');assert.equal(calls.at(-1).entity_id,a);
+ assert.equal(card.shadowRoot.querySelector('#nextPage').hidden,false);
+ assert.equal(card._nextPage.media_content_id,'nas:30');
+ await card._browse('cinemaseat_library','nas:30');
+ assert.equal(card._browseHistory.length,2);
+ hass.callWS=async()=>{throw new Error('Browse failed');};await card._browseBack();
+ assert.equal(card._browseHistory.length,2);assert.match(card.shadowRoot.querySelector('#message').textContent,/Browse failed/);
+});
+test('explicit release captures presentation identity and preroll disables feature-only controls',async()=>{
+ const {card,calls,hass}=fixture();const attrs=hass.states[a].attributes;
+ attrs.capabilities=['start_sequence','advance_sequence'];attrs.can_control_playback=true;
+ attrs.presentation={id:'show-1',lead:'cs',phase:'preparing',waiting_for_ha:true};card.hass=hass;
+ await card._releaseSequence();assert.equal(calls.at(-1).service,'start_sequence');
+ assert.deepEqual(calls.at(-1).service_data,{presentation_id:'show-1'});
+ attrs.presentation={id:'show-2',lead:'ha',phase:'trailer',waiting_for_ha:false};card.hass=hass;
+ assert.equal(card.shadowRoot.querySelector('#releaseSequence').disabled,true);
+ assert.equal(card.shadowRoot.querySelector('[data-service="media_pause"]').disabled,true);
+ assert.equal(card.shadowRoot.querySelector('[data-service="media_previous_track"]').disabled,true);
+ assert.equal(card.shadowRoot.querySelector('[data-service="media_next_track"]').disabled,false);
+});
+test('native selectors bind by player identity and never fall through to another player',async()=>{
+ const {card,calls,hass,select}=fixture();
+ for(const [player,id] of [[a,'select.a_audio'],[b,'select.b_audio']])hass.states[id]={state:'English',attributes:{player_id:player,track_type:'audio',options:['English','Dutch']}};
+ card.hass=hass;select(b);
+ const audio=card.shadowRoot.querySelector('#nativeAudio');assert.equal(audio.dataset.entity,'select.b_audio');
+ audio.value='Dutch';await card._nativeTrack('audio');
+ assert.equal(calls.at(-1).target.entity_id,'select.b_audio');assert.equal(calls.at(-1).domain,'select');assert.deepEqual(calls.at(-1).service_data,{option:'Dutch'});
+ delete hass.states['select.b_audio'];card.hass=hass;assert.equal(audio.disabled,true);
+});
+test('event subscriptions filter players, cap memory, stop on removal and clean up a late subscription',async()=>{
+ const {card,hass}=fixture();let receive,stopped=0;
+ hass.connection={subscribeEvents:async(callback,type)=>{assert.equal(type,'cinemaseat_event');receive=callback;return()=>{stopped++;};}};card.hass=hass;
+ await card._toggleEvents();
+ receive({data:{entity_id:b,event:'pause_movie'}});assert.equal(card._events.length,0);
+ for(let i=0;i<160;i++)receive({data:{entity_id:a,event:'timecode',position:i}});
+ assert.equal(card._events.length,150);assert.equal(card._events[0].data.position,10);
+ card.disconnectedCallback();await Promise.resolve();await Promise.resolve();assert.equal(stopped,1);
+ receive({data:{entity_id:a,event:'pause_movie'}});assert.equal(card._events.length,150);
+ let resolve;hass.connection={subscribeEvents:()=>new Promise(r=>{resolve=r;})};card.hass=hass;
+ const pending=card._toggleEvents();card.disconnectedCallback();resolve(()=>{stopped++;});await pending;assert.equal(stopped,2);
+});
+test('timecode marker ignores paused, skipped and wrong-version samples and fires once without a service call',async()=>{
+ const {card,calls,hass}=fixture();hass.states[a].attributes.boot_id='boot';hass.states[a].attributes.presentation={id:'show',movie_id:'nas:version',title:'Feature',phase:'movie'};
+ hass.connection={subscribeEvents:async()=>()=>{}};card.hass=hass;
+ card.shadowRoot.querySelector('#markerTimecode').value='00:00:10';await card._armMarker();
+ const sample={entity_id:a,event:'timecode',presentation_id:'show',movie_id:'nas:version',boot_id:'boot',status:'playing',buffering:false,discontinuity:false,previous_position:9,position:10};
+ for(const delta of [{status:'paused'},{buffering:true},{discontinuity:true},{movie_id:'nas:other'},{presentation_id:'old'},{boot_id:'old'}])card._receiveEvent({data:{...sample,...delta}});
+ assert.equal(card._marker.fired,false);card._receiveEvent({data:sample});assert.equal(card._marker.fired,true);
+ assert.match(card.shadowRoot.querySelector('#markerStatus').textContent,/Test passed/);assert.equal(calls.length,0);
+ card.disconnectedCallback();
+});
+test('custom sequence route and saved sequence automation retain the same wait-and-release contract',async()=>{
+ const {card,calls,hass}=fixture();const attrs=hass.states[a].attributes;attrs.status='idle';attrs.can_start_playback=true;attrs.capabilities=['prepare_sequence'];card.hass=hass;
+ card.shadowRoot.querySelector('#commandRoute').value='custom';await card._prepareSequence({media_content_id:'nas:film',title:'Film'},{audio_id:'audio'});
+ assert.equal(calls.at(-1).domain,'cinemaseat');assert.equal(calls.at(-1).service,'prepare_sequence');assert.deepEqual(calls.at(-1).service_data,{movie_id:'nas:film',audio_id:'audio'});
+ card._selection={id:'nas:film',title:'Film',audio:[],subtitles:[]};card._renderSelection();card.shadowRoot.querySelector('#automationPlayback').value='sequence';
+ const config=card._automationConfig();assert.equal(config.actions.at(-1).data.extra.playback_mode,'sequence');
+ assert.equal(config.actions.length,1);assert.equal(JSON.stringify(config).includes('presentation_id'),false);
+});
+test('native selector discovery resolves registry device siblings and preserves player scope',async()=>{
+ const {card,hass,select}=fixture();hass.states[a].attributes.player_id='stable-a';
+ hass.states['select.renamed_audio']={state:'English',attributes:{options:['English']}};
+ hass.callWS=async req=>{assert.equal(req.type,'config/entity_registry/list');return [{entity_id:a,device_id:'device-a'},
+  {entity_id:'select.renamed_audio',device_id:'device-a',platform:'cinemaseat',unique_id:'stable-a_audio'},
+  {entity_id:'select.other_audio',device_id:'device-b',platform:'cinemaseat',unique_id:'stable-a_audio'}];};
+ card.hass=hass;await card._discoverNative();assert.equal(card.shadowRoot.querySelector('#nativeAudio').dataset.entity,'select.renamed_audio');
+ select(b);assert.equal(card.shadowRoot.querySelector('#nativeAudio').dataset.entity,'');
+});
+test('live events keep an expanded payload open while new timecodes arrive',()=>{
+ const {card}=fixture();card._receiveEvent({data:{entity_id:a,event:'start_movie'}});
+ card.shadowRoot.querySelector('#eventLog details').open=true;
+ card._receiveEvent({data:{entity_id:a,event:'timecode',position:1}});
+ assert.equal(card.shadowRoot.querySelectorAll('#eventLog details[open]').length,1);
+ assert.match(card.shadowRoot.querySelector('#eventLog details[open]').textContent,/start_movie/);
 });

@@ -18,6 +18,7 @@ class CinemaSeatTrackSelect(SelectEntity):
         self._attr_name = "Audio" if kind == "audio" else "Subtitles"
         self._attr_unique_id = entry.data["player_id"] + "_" + kind
         self._attr_device_info = {"identifiers": {("cinemaseat", entry.data["player_id"])}}
+        self._attr_extra_state_attributes = {"player_id": entry.data["player_id"], "track_type": kind}
         self._attr_icon = "mdi:volume-high" if kind == "audio" else "mdi:subtitles"
 
     @property

@@ -4,14 +4,11 @@
     {
       "title": "Control",
       "path": "control",
+      "type": "panel",
       "cards": [
         {
-          "type": "markdown",
-          "content": "# CinemaSeat\nSearch and start a film through the paired player. Control the current film below."
-        },
-        {
-          "type": "custom:cinemaseat-search-card",
-          "entity": "media_player.cinemaseat_apple_tv"
+          "type": "custom:cinemaseat-dashboard-card",
+          "entity": "media_player.cinemaseat_mac"
         }
       ]
     }

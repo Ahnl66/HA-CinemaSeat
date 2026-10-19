@@ -427,6 +427,7 @@ class CinemaSeatTests(unittest.IsolatedAsyncioTestCase):
         self.player.snapshot = dict(self.broker.state)
         audio = select_module.CinemaSeatTrackSelect(self.player.entry, "audio"); audio.hass = self.player.hass
         subtitle = select_module.CinemaSeatTrackSelect(self.player.entry, "subtitle"); subtitle.hass = self.player.hass
+        self.assertEqual(audio.extra_state_attributes, {"player_id":"test-player", "track_type":"audio"})
         self.assertTrue(audio.available)
         self.assertEqual(audio.options, ["Dutch · audio-nl"])
         self.assertEqual(subtitle.current_option, "Off")

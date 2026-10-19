@@ -2,6 +2,7 @@ title: CinemaSeat
 views:
   - title: Control
     path: control
+    type: panel
     cards:
-      - type: custom:cinemaseat-search-card
-        entity: media_player.cinemaseat_apple_tv
+      - type: custom:cinemaseat-dashboard-card
+        entity: media_player.cinemaseat_mac

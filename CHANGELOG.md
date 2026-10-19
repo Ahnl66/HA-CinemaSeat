@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.11.0 — 2026-10-19
+
+- Replace the search-only layout with a responsive control/test dashboard: Control, Library, Events & tests and Diagnostics. Retain the existing card type; add `cinemaseat-dashboard-card`.
+- Add native media browsing with source folders, playback choices, poster thumbnails, pagination/back and exact-ID details. Keep direct/sequence start and explicit preselected tracks.
+- Test both standard/custom sequence preparation and exact-presentation release; expose actual sequence/curtain/feature/connection/permission state and progress.
+- Add native HA selector controls alongside retained CinemaSeat track actions, with player-scoped attribute/registry discovery.
+- Add a bounded live event monitor with filters, payload inspection and local JSON export. Unsubscribe on removal and protect against late subscriptions and player/connection changes.
+- Add an observational, version/presentation-specific timecode crossing test that ignores paused/buffering/discontinuous samples and executes no room actions.
+- Add full diagnostics, capability-aware controls, HA entity details/refresh, saved direct/sequence automations and a manual test checklist.
+- Update full-width example dashboards and documentation. Verified with 19 frontend regressions, 38 HA tests and desktop/mobile browser rendering with mock data; live playback commands are not used for visual testing.
+
 ## 0.10.0 — 2026-10-19
 
 - Remove the separate ATV HA mode. A paired foreground app connects automatically; the HA shortcut opens connection settings/status.
