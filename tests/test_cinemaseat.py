@@ -363,6 +363,32 @@ class CinemaSeatTests(unittest.IsolatedAsyncioTestCase):
         await self.player.async_play_media("movie", "1")
         self.assertIn("start", [c["action"] for c in self.broker.commands])
 
+    async def test_disabled_sources_hide_browse_and_reject_stale_ids(self):
+        from homeassistant.components.media_player.errors import BrowseError
+        self.broker.state["enabled_sources"] = ["nas"]
+        self.player.snapshot = dict(self.broker.state)
+        root = await self.player.async_browse_media()
+        self.assertEqual([child.title for child in root.children], ["NAS"])
+        with self.assertRaises(BrowseError):
+            await self.player.async_browse_media("cinemaseat_library", "plex:0")
+        with self.assertRaises(BrowseError):
+            await self.player.async_browse_media("movie", "123")
+        with self.assertRaisesRegex(HomeAssistantError, "source is disabled"):
+            await self.player.async_movie_details("123")
+        self.assertNotIn("get_movie_details", [command["action"] for command in self.broker.commands])
+        with self.assertRaises(SearchError):
+            await self.player.async_search_media(SearchMediaQuery(search_query="film", media_content_type="cinemaseat_plex"))
+        self.broker.state["enabled_sources"] = []
+        self.player.snapshot = dict(self.broker.state)
+        self.assertEqual((await self.player.async_browse_media()).children, [])
+        self.player.online = True; self.player.updated = time.monotonic()
+        self.player.snapshot["capabilities"] = ["get_artwork"]
+        self.player._artwork_cache[("boot-1", "nas:old")] = (time.monotonic() + 300, b"cached")
+        self.assertEqual(await self.player.async_get_browse_image("movie", "nas:old"), (None, None))
+        self.broker.state["enabled_sources"] = ["plex", "nas"]
+        self.player.snapshot = dict(self.broker.state)
+        self.assertEqual(len((await self.player.async_browse_media()).children), 2)
+
     async def test_browse_pages_and_direct_sequence_choices(self):
         self.player.entity_id = "media_player.test"
         self.broker.state["capabilities"].extend(["browse_movies", "get_artwork", "prepare_sequence"])

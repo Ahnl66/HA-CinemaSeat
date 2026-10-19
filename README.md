@@ -26,7 +26,7 @@ Opening the HA form starts the pairing endpoint, including on a fresh installati
 
 No broker username/password, manually entered player ID, or permanent pairing-code field is needed. Pairing itself does not start a film. When control is allowed, HA and the ATV remote can both control an active Play Sequence.
 
-The main settings menu shows the saved HA address and port. HA settings/status are available through the gear icon or the HA shortcut; opening them does not switch control mode. The HA icon is hidden until a valid HA destination has been saved. **Clear** in the HA settings removes the saved destination and local pairing key, retaining the generated Player ID. Pair again to reconnect; delete the HA player entry separately if you also want to remove it from Home Assistant.
+Home Assistant settings are available through **Settings → Connections → Home Assistant**. Opening settings does not switch playback mode. **Clear** removes the saved destination and local pairing key, retaining the Player ID. **Connection enabled** temporarily disconnects without removing the saved destination, key or playback permission. Delete the HA player entry separately if you also want to remove it from Home Assistant.
 
 For HTTPS, enter `https://ha.example.com` and the HTTPS port (usually `443`). Certificate verification remains enabled. HTTP is supported for trusted local networks; use HTTPS for connections outside that network. Changing the saved HA destination clears the key for the old destination, so it cannot be sent to another HA server.
 
@@ -36,9 +36,17 @@ For manual installation, copy only `custom_components/cinemaseat` to your HA con
 
 ## Upgrade to 0.10.0: no separate HA mode
 
-Update both the integration and CinemaSeat app, then restart HA. Existing player/entity IDs and pairing are retained. **Enable Allow control from Home Assistant once in the ATV HA settings**: it defaults to off for new and existing installs. Library/status reads work without granting playback control. A paired app connects automatically while open; HA starts open the player automatically. The HA shortcut opens settings/status.
+Update both the integration and CinemaSeat app, then restart HA. Existing player/entity IDs and pairing are retained. **Enable Allow control from Home Assistant once in the ATV HA settings**: it defaults to off for new and existing installs. Library/status reads work without granting playback control. A paired app connects automatically while open; HA starts open the player automatically. Use Settings → Connections → Home Assistant for settings/status.
 
 HA can start a film when permission is enabled and no film/sequence is active. Stop the current presentation before starting another; it is never replaced implicitly. Disabling control leaves playback running and the ATV remote usable. Local direct playback remains outside HA control and sequence events. Existing presentation-ID release automations are retained; enable control before using Wait for Home Assistant. A changed HA destination or cleared pairing resets permission.
+
+## Saved connection switches (0.12.0)
+
+Update both the integration and CinemaSeat app, then restart HA. Each ATV connection (Plex, NAS, Home Assistant) has a saved **Connection enabled** switch. Missing flags default to enabled on upgrade. Disabling preserves addresses, credentials, pairing, HA playback permission, the NAS index, history and home layout. Re-enabling restores access without automatically starting playback or replaying commands/events.
+
+Disabled movie sources disappear from app and HA libraries/search and cannot be started through saved film IDs or scripts. Disabling the source of an active film/sequence stops it. NAS-dependent sequences require NAS. Disabling only HA leaves a running film playing locally; a sequence waiting for HA is cancelled. New local sequences skip the saved HA wait while HA is disabled.
+
+The media player exposes `enabled_sources`. The bundled dashboard hides disabled source choices and clears stale selections. Both movie sources can be off while HA remains connected. Turning the HA connection off makes the HA entity unavailable without removing entities or automations. **Allow control from Home Assistant** remains a separate permission. See [connection behavior and verification](docs/connections.md).
 
 ## Native media player controls
 
@@ -59,7 +67,7 @@ The MQTT integration/broker can remain for other devices. If MQTT is loaded duri
 In your HA profile, enable **Advanced mode** if Resources is hidden. In **Settings → Dashboards → ⋮ → Resources**, add this **JavaScript module**:
 
 ```text
-/cinemaseat/cinema-search-card.js?v=0.11.1
+/cinemaseat/cinema-search-card.js?v=0.12.0
 ```
 
 Add a manual card, replacing the entity with your paired CinemaSeat player:

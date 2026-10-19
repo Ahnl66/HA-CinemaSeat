@@ -75,3 +75,6 @@ The same CinemaSeat device contains Audio and Subtitles `select` entities. Use `
 ## Verification and limits
 
 Regression coverage includes sequence release correlation, paginated/sanitized browsing, image limits/caching, concurrent artwork and playback commands, native track choices, capability changes, state throttling and retained timecode events. The arm64 tvOS simulator build is checked. Physical Apple TV/NAS playback and room-script timing require device validation. A built app is not installed over a running presentation automatically.
+
+
+`enabled_sources` lists currently configured and enabled movie sources (`plex`, `nas`). An empty list prevents browsing/starting movies while the paired HA connection stays available. Turning off the HA connection on ATV makes the entity unavailable without deleting it. See [connection switches](connections.md).

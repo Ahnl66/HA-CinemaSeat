@@ -162,6 +162,8 @@ class CinemaSeatPlayer(MediaPlayerEntity):
             meaningful = lambda state: {k: v for k, v in state.items() if k not in {"sequence", "position"}}
             publish = (not previous or meaningful(previous) != meaningful(value)
                        or abs(value.get("position", 0) - expected) > 2 or now - self._reported_at >= 30)
+            if value.get("enabled_sources") != previous.get("enabled_sources"):
+                self._artwork_cache.clear()
             self.snapshot = value
             self.updated = now
             if publish:
@@ -240,7 +242,7 @@ class CinemaSeatPlayer(MediaPlayerEntity):
                 "library_source": "nas" if (presentation.get("movie_id") or self.media_content_id or "").startswith("nas:") else "plex" if self.media_content_id else None}
         return {**flat, "pairing_required": not bool(self.entry.data.get("auth_token")), **{k: self.snapshot.get(k) for k in [
             "player_id", "boot_id", "session_id", "status", "owner", "buffering", "error_code",
-            "capabilities", "curtain_state", "presentation", "ha_mode", "remote_control_allowed", "can_start_playback", "can_browse_library", "can_control_playback", "chapter_id",
+            "capabilities", "curtain_state", "presentation", "ha_mode", "remote_control_allowed", "can_start_playback", "can_browse_library", "can_control_playback", "chapter_id", "enabled_sources",
             "audio_tracks", "subtitle_tracks", "selected_audio_id", "selected_subtitle_id", "subtitles_off",
         ]}}
 
@@ -300,6 +302,8 @@ class CinemaSeatPlayer(MediaPlayerEntity):
     async def _load_artwork(self, movie_id):
         if not movie_id or not self.available or "get_artwork" not in self.snapshot.get("capabilities", []):
             return None, None
+        if ("nas" if movie_id.startswith("nas:") else "plex") not in self.snapshot.get("enabled_sources", ["plex", "nas"]):
+            return None, None
         key = (self.snapshot.get("boot_id"), movie_id)
         cached = self._artwork_cache.get(key)
         if cached and time.monotonic() < cached[0]:
@@ -324,7 +328,10 @@ class CinemaSeatPlayer(MediaPlayerEntity):
         folder = lambda title, content_id, children: BrowseMedia(title=title, media_class=MediaClass.DIRECTORY,
             media_content_type="cinemaseat_library", media_content_id=content_id, can_play=False,
             can_expand=True, children=children)
+        sources = self.snapshot.get("enabled_sources", ["plex", "nas"])
         if media_content_type in {"movie", "cinemaseat_sequence"} and media_content_id:
+            if ("nas" if media_content_id.startswith("nas:") else "plex") not in sources:
+                raise BrowseError("This CinemaSeat source is disabled")
             def option(kind, title):
                 return BrowseMedia(title=title, media_class=MediaClass.MOVIE, media_content_type=kind,
                     media_content_id=media_content_id, can_play=self.snapshot.get("can_start_playback", True), can_expand=False)
@@ -333,11 +340,11 @@ class CinemaSeatPlayer(MediaPlayerEntity):
                 options.append(option("cinemaseat_sequence", "Play Sequence"))
             return folder("Film options", "root", options)
         if not media_content_id or media_content_id == "root":
-            return folder("CinemaSeat", "root", [folder("Plex", "plex:0", []), folder("NAS", "nas:0", [])])
+            return folder("CinemaSeat", "root", [folder(source.title() if source == "plex" else "NAS", f"{source}:0", []) for source in sources if source in {"plex", "nas"}])
         try:
             source, offset = media_content_id.split(":", 1)
             offset = int(offset)
-            if source not in {"nas", "plex"} or offset < 0 or offset > 1_000_000:
+            if source not in sources or source not in {"nas", "plex"} or offset < 0 or offset > 1_000_000:
                 raise ValueError
         except (ValueError, AttributeError):
             raise BrowseError("Invalid CinemaSeat library page") from None
@@ -360,6 +367,13 @@ class CinemaSeatPlayer(MediaPlayerEntity):
         return folder(source.upper(), f"{source}:{offset}", children)
 
     async def _request(self, action, state=None, *, timeout=20, operation=None, **fields):
+        sources = (state or self.snapshot).get("enabled_sources", ["plex", "nas"])
+        movie_id = fields.get("movie_id")
+        source = fields.get("source")
+        if movie_id and ("nas" if movie_id.startswith("nas:") else "plex") not in sources:
+            raise HomeAssistantError("This CinemaSeat source is disabled")
+        if source in {"plex", "nas"} and source not in sources:
+            raise HomeAssistantError("This CinemaSeat source is disabled")
         if self._unloading:
             raise HomeAssistantError("CinemaSeat was unloaded")
         if (state and state.get("remote_control_allowed") is False

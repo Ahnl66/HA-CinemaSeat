@@ -39,7 +39,7 @@ class CinemaSeatSearchCard extends HTMLElement {
         <div class="page grid" data-section="events" hidden>
           <section class="panel wide"><h3>Live CinemaSeat events</h3><div class="controls"><button id="listenEvents">Start listening</button><button id="clearEvents" class="secondary">Clear log</button><button id="exportEvents" class="secondary">Download event log</button><select id="eventFilter" aria-label="Event filter"><option value="all">All events</option><option value="sequence">Sequence & curtain</option><option value="playback">Playback & tracks</option><option value="timecode">Timecodes</option></select></div><p id="eventStatus" class="hint">Not listening. Events are live only; nothing is replayed.</p><p class="hint">Sequence events require Play Sequence. Direct Play has no presentation events. Event subscription may require an HA administrator.</p><div id="eventLog"></div></section>
           <section class="panel"><h3>Timecode crossing test</h3><label for="markerTimecode">Feature timecode</label><input id="markerTimecode" placeholder="HH:MM:SS" inputmode="numeric"><div class="controls"><button id="armMarker">Arm for current feature version</button><button id="resetMarker" class="secondary">Reset</button></div><p id="markerStatus" class="hint">Observe a timecode crossing without executing room scripts.</p><p class="hint">Uses actual timecode events, not estimated HA progress. Paused/buffering samples and skipped ranges do not trigger the marker. It fires once for the captured film version and presentation.</p></section>
-          <section class="panel"><h3>Integration test checklist</h3><ol class="checklist"><li>Open CS with control disabled: library/status available, playback disabled.</li><li>Enable HA control on ATV; browse/search Plex and NAS and inspect tracks/posters.</li><li>Play directly: test pause, resume, seek, chapters and both track-control routes.</li><li>Start a NAS sequence from HA; inspect Prepare, release it and skip preroll.</li><li>Start Play Sequence on ATV; repeat HA controls and ATV remote controls.</li><li>Arm a marker; cross it normally, then test seeking over it and rewinding.</li><li>Disable HA control during playback; confirm ATV playback continues.</li><li>Background/reopen CS; confirm reconnect without replaying events.</li></ol></section>
+          <section class="panel"><h3>Integration test checklist</h3><ol class="checklist"><li>Open CS with control disabled: library/status available, playback disabled.</li><li>Enable HA control on ATV; browse/search Plex and NAS and inspect tracks/posters.</li><li>Play directly: test pause, resume, seek, chapters and both track-control routes.</li><li>Start a NAS sequence from HA; inspect Prepare, release it and skip preroll.</li><li>Start Play Sequence on ATV; repeat HA controls and ATV remote controls.</li><li>Arm a marker; cross it normally, then test seeking over it and rewinding.</li><li>Disable HA control during playback; confirm ATV playback continues.</li><li>Disable Plex/NAS in ATV connection settings; confirm films disappear and stale IDs cannot start.</li><li>Re-enable sources; confirm saved settings, index and home rows return.</li><li>Disable the HA connection; confirm local playback continues and HA becomes unavailable.</li><li>Background/reopen CS; confirm reconnect without replaying events.</li></ol></section>
         </div>
         <div class="page grid" data-section="diagnostics" hidden>
           <section class="panel"><h3>Connection & permission</h3><div id="connectionFacts" class="facts"></div><div class="controls"><button id="moreInfo" class="secondary">HA entity details</button><button id="refreshState" class="secondary">Refresh HA state</button><button id="exportState" class="secondary">Download diagnostics</button></div><p class="hint">Playback permission is changed on ATV in Settings → Home Assistant. Pairing and permission are separate. Refresh requests HA's current entity state; it does not start playback.</p></section>
@@ -124,6 +124,20 @@ class CinemaSeatSearchCard extends HTMLElement {
     const state=this._hass.states[this._entity()];
     const unavailable=!state||["unavailable","unknown"].includes(state.state);
     const attributes=state?.attributes||{};
+    const sources=attributes.enabled_sources??["plex","nas"];
+    const sourceKey=JSON.stringify(sources);
+    const filtered=this._results.filter(movie=>sources.includes((movie.id||movie.media_content_id||"").startsWith("nas:")?"nas":"plex"));
+    if(this._sourceKey!==sourceKey||filtered.length!==this._results.length){
+      this._sourceKey=sourceKey;this._results=filtered;
+      this._browseHistory=[];this._nextPage=null;this._renderResults();
+    }
+    if(this._selection&&!sources.includes(this._selection.id.startsWith("nas:")?"nas":"plex")){
+      this._selection=null;this._renderSelection();
+    }
+    const sourceSelect=this.shadowRoot.querySelector("#source");
+    for(const option of sourceSelect.options)option.hidden=option.value!=="all"&&!sources.includes(option.value);
+    sourceSelect.options[0].textContent=sources.length===2?"Plex and NAS":sources.length?sources[0].toUpperCase():"No enabled sources";
+    if(sourceSelect.value!=="all"&&!sources.includes(sourceSelect.value))sourceSelect.value="all";
     const canBrowse=attributes.can_browse_library??attributes.ha_mode;
     const canStart=attributes.can_start_playback??attributes.ha_mode;
     if (this._selection&&attributes.boot_id&&this._selection.boot_id!==attributes.boot_id) {
@@ -441,12 +455,15 @@ class CinemaSeatSearchCard extends HTMLElement {
     const release=this.shadowRoot.querySelector("#releaseSequence");release.dataset.presentation=p.id||"";
     release.disabled=this._busy||unavailable||!currentControl||!p.waiting_for_ha||!caps.includes("start_sequence");
     for(const id of ["browseRoot","browsePlex","browseNAS","browseBack","nextPage"])this.shadowRoot.querySelector("#"+id).disabled=this._busy||unavailable||(a.can_browse_library??a.ha_mode)===false||!caps.includes("browse_movies");
+    for(const [id,source] of [["browsePlex","plex"],["browseNAS","nas"]]){
+      this.shadowRoot.querySelector("#"+id).hidden=!(a.enabled_sources??["plex","nas"]).includes(source);
+    }
     this.shadowRoot.querySelector("#browseBack").disabled ||= this._browseHistory.length<2;
     this.shadowRoot.querySelector("#nextPage").hidden=!this._nextPage;
     this.shadowRoot.querySelector("#loadMovieDetails").disabled=this._busy||unavailable||!caps.includes("get_movie_details");
     this.shadowRoot.querySelector("#commandRoute").disabled=this._busy;
     this.shadowRoot.querySelector("#automationPlayback").disabled=this._busy;
-    this._facts("connectionFacts",[["Entity",this._entity()],["Player ID",a.player_id],["Available",!unavailable],["Pairing required",a.pairing_required],["Remote control allowed",a.remote_control_allowed],["Library access",a.can_browse_library],["Can start",a.can_start_playback],["Can control current film",a.can_control_playback],["Source",a.library_source],["Owner",a.owner],["HA state",state?.state],["App status",a.status],["Buffering",a.buffering],["Error",a.error_code],["Boot ID",a.boot_id],["Clip session ID",a.session_id],["State updated",state?.last_updated],["Supported features",a.supported_features]]);
+    this._facts("connectionFacts",[["Entity",this._entity()],["Player ID",a.player_id],["Available",!unavailable],["Pairing required",a.pairing_required],["Remote control allowed",a.remote_control_allowed],["Library access",a.can_browse_library],["Enabled sources",(a.enabled_sources??["plex","nas"]).join(", ")],["Can start",a.can_start_playback],["Can control current film",a.can_control_playback],["Source",a.library_source],["Owner",a.owner],["HA state",state?.state],["App status",a.status],["Buffering",a.buffering],["Error",a.error_code],["Boot ID",a.boot_id],["Clip session ID",a.session_id],["State updated",state?.last_updated],["Supported features",a.supported_features]]);
     this.shadowRoot.querySelector("#rawState").textContent=JSON.stringify(state||{error:"Entity not found"},null,2);
     this.shadowRoot.querySelector("#capabilities").replaceChildren(...caps.map(value=>{const span=document.createElement("span");span.className="chip";span.textContent=value;return span;}));
     this.shadowRoot.querySelector("#refreshState").disabled=this._busy;

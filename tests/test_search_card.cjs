@@ -280,3 +280,21 @@ test('native browse is disabled for a legacy app outside its permitted mode',()=
  hass.states[a].attributes.can_browse_library=true;card.hass=hass;
  assert.equal(card.shadowRoot.querySelector('#browseNAS').disabled,false);
 });
+
+test('disabled sources remove old search selections, browse buttons and source options without losing remaining films',()=>{
+ const {card,hass}=fixture();const attrs=hass.states[a].attributes;
+ card._results=[{media_content_id:'123',title:'Plex film'},{media_content_id:'nas:film',title:'NAS film'}];
+ card._selection={id:'123',title:'Plex film',boot_id:attrs.boot_id};card._renderSelection();
+ attrs.enabled_sources=['nas'];card.hass=hass;
+ assert.deepEqual(card._results.map(movie=>movie.media_content_id),['nas:film']);
+ assert.equal(card._selection,null);assert.equal(card.shadowRoot.querySelector('#selection').hidden,true);
+ assert.equal(card.shadowRoot.querySelector('#source option[value="plex"]').hidden,true);
+ assert.equal(card.shadowRoot.querySelector('#browsePlex').hidden,true);assert.equal(card.shadowRoot.querySelector('#browseNAS').hidden,false);
+ // A delayed search response cannot restore a disabled source after its status update.
+ card._results=[{media_content_id:'123',title:'Late Plex film'}];card.hass=hass;assert.equal(card._results.length,0);
+ attrs.enabled_sources=[];attrs.can_browse_library=false;attrs.can_start_playback=false;card.hass=hass;
+ assert.equal(card.shadowRoot.querySelector('form button').disabled,true);
+ attrs.enabled_sources=['plex','nas'];attrs.can_browse_library=true;attrs.can_start_playback=true;card.hass=hass;
+ assert.equal(card.shadowRoot.querySelector('#browsePlex').hidden,false);
+ assert.equal(card.shadowRoot.querySelector('#source option[value="plex"]').hidden,false);
+});
