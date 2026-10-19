@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.0 — 2026-10-19
+
+- Use standard `media_player.play_media` for NAS Play Sequence and `media_player.media_play` for manual release of the current wait point. Keep explicit presentation IDs for delayed automation releases.
+- Add native Plex/NAS media browsing with pagination and Direct Play / Play Sequence choices.
+- Add bounded poster images through HA's media-player proxy, with caching and independent artwork requests that do not block playback commands.
+- Add Audio and Subtitles select entities to the CinemaSeat device, with confirmed track feedback and stale-session validation.
+- Expose flat presentation/feature attributes, actual curtain state and confirmed buffering; advertise controls according to mode and sequence phase.
+- Throttle normal HA progress state writes while retaining immediate playback changes and second-by-second timecode events.
+- Retain existing CinemaSeat actions/events. Explain standalone curtain retirement on current apps.
+- Requires the updated CinemaSeat app and HA integration. Verified with Swift remote/presentation and sequence regressions, 37 HA integration tests, 14 pairing/WebSocket tests, 9 dashboard tests and an arm64 tvOS simulator build. Physical device and live HACS upgrade validation remain pending.
+
 ## 0.8.1 — 2026-10-18
 
 - Allow the paired HA media player to control a Play Sequence started locally on ATV, without entering HA mode.

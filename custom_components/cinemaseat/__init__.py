@@ -98,7 +98,7 @@ async def async_setup_entry(hass, entry):
     hub = hass.data[DOMAIN]["hub"]
     hub.register_entry(entry)
     try:
-        await hass.config_entries.async_forward_entry_setups(entry, [Platform.MEDIA_PLAYER])
+        await hass.config_entries.async_forward_entry_setups(entry, [Platform.MEDIA_PLAYER, Platform.SELECT])
     except Exception:
         entries.discard(entry.entry_id)
         await hub.unregister_entry(entry)
@@ -110,7 +110,7 @@ async def async_setup_entry(hass, entry):
 
 
 async def async_unload_entry(hass, entry):
-    if not await hass.config_entries.async_unload_platforms(entry, [Platform.MEDIA_PLAYER]):
+    if not await hass.config_entries.async_unload_platforms(entry, [Platform.MEDIA_PLAYER, Platform.SELECT]):
         return False
     entries = hass.data[DOMAIN]["entries"]
     entries.discard(entry.entry_id)

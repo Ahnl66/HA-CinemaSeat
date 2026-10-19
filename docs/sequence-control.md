@@ -106,3 +106,7 @@ The arm64 tvOS 27 simulator build succeeds. The production remote/presentation p
 ### 0.8.1 — shared control for local sequences
 
 A sequence started on ATV can be controlled by the paired HA media player without entering HA mode. The app explicitly distinguishes `can_control_playback` from `ha_mode`, and the dashboard uses this for transport, skip, seek and track controls. Starting/replacing content from HA still requires HA mode. Commands retain session/presentation validation. Direct local playback remains outside the sequence integration. Update both the ATV app and HA integration; use card resource `?v=0.8.1` when registered manually.
+
+### 0.9.0 — native media player integration
+
+See [media-player actions and attributes](media-player.md). `media_player.play_media` with `extra.playback_mode: sequence` prepares the same NAS sequence; it still waits for explicit release. The standard Play button releases the presentation currently waiting. Automated delayed release must retain the presentation ID from `prepare_start_sequence` and use `cinemaseat.start_sequence`. Audio/Subtitles also have native select entities, and media browsing includes paginated Plex/NAS movies and HA-proxied artwork. Existing events/actions are retained; `curtain_state_changed` additionally signals actual curtain transitions. Use card resource `?v=0.9.0` after updating both app and integration.

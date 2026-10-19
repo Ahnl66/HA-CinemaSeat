@@ -1,3 +1,5 @@
+> Version 0.9.0: see [current native media-player actions, attributes and selectors](media-player.md).
+
 > Version 0.8.0 adds NAS Play Sequence and two-mode presentation control. See [current sequence actions, events and handshake](sequence-control.md). Standalone curtain instructions below apply to older ATV builds; the current app uses the curtain only in Play Sequence.
 
 # Actions

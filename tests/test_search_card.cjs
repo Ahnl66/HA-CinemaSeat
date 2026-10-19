@@ -125,8 +125,9 @@ test('NAS source, sequence with tracks and timecode commands follow the chosen p
  card.shadowRoot.querySelector('#source').value='nas';card.shadowRoot.querySelector('form input').value='Film';
  await card._search();assert.equal(calls.at(-1).media_content_type,'cinemaseat_nas');
  await card._prepareSequence({media_content_id:'nas:feature'}, {audio_id:'audio-nl',subtitles_off:true});
- assert.equal(calls.at(-1).service,'prepare_sequence');assert.equal(calls.at(-1).target.entity_id,b);
- assert.equal(calls.at(-1).service_data.audio_id,'audio-nl');
+ assert.equal(calls.at(-1).service,'play_media');assert.equal(calls.at(-1).target.entity_id,b);
+ assert.equal(calls.at(-1).service_data.extra.audio_id,'audio-nl');
+ assert.equal(calls.at(-1).service_data.extra.playback_mode,'sequence');
  attributes.status='playing';attributes.presentation={id:'show',lead:'ha',phase:'movie',waiting_for_ha:false};card.hass=hass;
  card.shadowRoot.querySelector('#timecode').value='01:02:03';await card._moveTimecode();
  assert.equal(calls.at(-1).service,'media_seek');assert.equal(calls.at(-1).service_data.seek_position,3723);

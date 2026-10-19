@@ -34,6 +34,12 @@ This is a HACS **custom repository**, not currently a default-catalogue entry. T
 
 For manual installation, copy only `custom_components/cinemaseat` to your HA config directory, restart HA, and continue at step 3.
 
+## 0.9.0: native media player controls
+
+Update both the integration and the CinemaSeat app, then restart HA. Existing player entities and pairing are retained. The same device now includes Audio and Subtitles select entities. Standard media-player browsing provides Plex/NAS folders, film posters and Direct Play / Play Sequence choices. `media_player.play_media` accepts `extra.playback_mode: sequence`; the standard Play button releases the currently waiting sequence. Delayed room automations retain `cinemaseat.start_sequence` with the event's presentation ID.
+
+Flat presentation/feature attributes, real curtain state, dynamic controls and anchored playback position are available directly on the media player. Timecode events remain second-by-second. See the [complete media-player reference and examples](docs/media-player.md).
+
 ## Upgrade from 0.4.x (MQTT)
 
 Update the integration **and the CinemaSeat app**, then restart HA. Existing HA player entries and entity IDs are retained, but their old MQTT pairing keys are discarded. The app retains its generated player ID and asks for an HA address instead of reusing a broker address.
@@ -47,7 +53,7 @@ The MQTT integration/broker can remain for other devices. If MQTT is loaded duri
 In your HA profile, enable **Advanced mode** if Resources is hidden. In **Settings → Dashboards → ⋮ → Resources**, add this **JavaScript module**:
 
 ```text
-/cinemaseat/cinema-search-card.js?v=0.8.1
+/cinemaseat/cinema-search-card.js?v=0.9.0
 ```
 
 Add a manual card, replacing the entity with your paired CinemaSeat player:
@@ -96,6 +102,7 @@ To replace a pairing, open HA's Reconfigure form and choose **Pair again** on th
 
 ## Reference
 
+- [Media player actions, attributes, library and track selectors](docs/media-player.md)
 - [Actions and automation examples](docs/actions.md)
 - [Direct protocol and pairing lifecycle](docs/protocol.md)
 - [Troubleshooting](docs/troubleshooting.md)

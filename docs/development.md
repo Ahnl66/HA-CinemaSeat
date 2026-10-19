@@ -22,7 +22,7 @@ docker exec homeassistant-test python /tmp/ha-cinemaseat-tests/tests/test_cinema
 docker exec homeassistant-test python /tmp/ha-cinemaseat-tests/tests/test_pairing.py
 ```
 
-The suite exercises real HA imports with a fake paired direct player. It covers search, versions, boot/session isolation, confirmed start, lease/heartbeat cleanup, explicit track choices, removal during pending work, multi-entry service lifetime, setup/unload failures, card availability, and reloading. The additional suite exercises actual aiohttp sockets, code expiry/single use/rate limits, key scoping, config-flow validation, entry migration, and authenticated reconnect. It sends no commands to a physical player.
+The suite exercises real HA imports with a fake paired direct player. Media-player coverage includes sequence commands, browse pagination, proxy artwork caching, native track selectors, capability changes and progress-state throttling. It covers search, versions, boot/session isolation, confirmed start, lease/heartbeat cleanup, explicit track choices, removal during pending work, multi-entry service lifetime, setup/unload failures, card availability, and reloading. The additional suite exercises actual aiohttp sockets, code expiry/single use/rate limits, key scoping, config-flow validation, entry migration, and authenticated reconnect. It sends no commands to a physical player.
 
 Frontend DOM regression tests are documented in [tests/README.md](../tests/README.md). They cover selection between multiple players and command/error handling.
 

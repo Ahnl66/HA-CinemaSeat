@@ -47,3 +47,11 @@ For HTTPS, certificate verification remains enabled. HTTP pairing/control is int
 Updated players advertise `show_curtain` in capabilities and report `curtain_state` as `hidden`, `closed`, or `opening`. The boot-scoped `show_curtain` command has an optional boolean `show` (default true); it is authenticated like all other commands and requires no active film. It returns executed with player state.
 
 The closed overlay remains mounted across preparation/start. Preparation arms the player’s existing curtain barrier only when HA has requested a curtain. The start command releases preparation; native readiness triggers the curtain opening and releases playback together. Stop, end, error, and returning to normal browsing clear the curtain. Connection recovery retains the current presentation without granting a new start.
+
+## Media browser and artwork extensions (0.9.0)
+
+Commands retain version 1, pairing authentication, expiry and boot checks. `browse_movies` accepts `source` (`nas`, `plex`, `all`) and an optional zero-based integer `offset` (0–1,000,000); it returns up to 30 sanitized movie DTOs plus `total`. Sorting uses title and a stable ID tie-break. No stream URLs or headers are returned. Browsing requires HA mode.
+
+`get_artwork` accepts an indexed `movie_id`. It returns `artwork` as base64 JPEG, maximum 90,000 decoded bytes. The app reads at most 4 MiB of source image data and scales to at most 400 pixels per dimension. JSON frames avoid escaping base64 slashes and remain within the 131,072-byte transport limit. At most two artwork reads run concurrently, separate from the serial control queue; HA queues additional thumbnails and caches eight images for five minutes per app boot. Outside HA mode only the active feature/current movie artwork is accessible. No arbitrary URL/path can be requested by HA.
+
+Presentation state includes optional indexed feature `duration`. `curtain_state` now reflects actual `preparing`, `closed`, `opening`, `hidden` transitions, with `curtain_state_changed` presentation events.

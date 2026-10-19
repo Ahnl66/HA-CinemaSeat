@@ -1,5 +1,6 @@
 """Run with Home Assistant 2026.10 dependencies: python tests/test_cinemaseat.py."""
 import asyncio
+import base64
 import importlib.util
 import json
 from pathlib import Path
@@ -53,6 +54,11 @@ class Broker:
                     "version":1,"command_id":command["command_id"],"boot_id":"old-boot",
                     "status":"executed","movies":[{"id":"wrong","title":"Stale"}]})))
             self.reply(command, movies=self.movies)
+        elif action == "browse_movies":
+            offset = command.get("offset", 0)
+            self.reply(command, movies=self.movies[offset:offset + 30], total=len(self.movies))
+        elif action == "get_artwork":
+            self.reply(command, artwork=base64.b64encode(b"\xff\xd8\xff\xd9").decode())
         elif action == "get_movie_details":
             self.reply(command, movies=[{"id":command["movie_id"],"title":"Film",
                 "audio":[{"id":"audio-en","name":"English"},{"id":"audio-nl","name":"Dutch"}],
@@ -198,7 +204,7 @@ class CinemaSeatTests(unittest.IsolatedAsyncioTestCase):
         timer.assert_called_once()
 
     async def test_curtain_requires_supported_idle_player_and_keeps_target(self):
-        with self.assertRaisesRegex(HomeAssistantError, "Update"):
+        with self.assertRaisesRegex(HomeAssistantError, "retired"):
             await self.player.async_show_curtain()
         self.broker.state["capabilities"].append("show_curtain")
         self.broker.state.update(status="playing", session_id="existing")
@@ -243,6 +249,9 @@ class CinemaSeatTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[0][1]["presentation_id"], "show-1")
         self.player.receive_frame({"type": "event", "event": {**event, "sequence": 6, "event": "timecode", "state": {"position": 50, "duration": 100}}})
         self.assertEqual(events[-1][1]["position"], 50)
+        self.player.receive_frame({"type": "event", "event": {**event, "sequence": 7,
+            "event": "curtain_state_changed", "state": {"curtain_state": "opening"}}})
+        self.assertEqual(events[-1][1]["curtain_state"], "opening")
 
     async def test_start_sequence_requires_exact_presentation(self):
         self.broker.state["presentation"] = {"id": "show-1", "waiting_for_ha": True}
@@ -289,6 +298,123 @@ class CinemaSeatTests(unittest.IsolatedAsyncioTestCase):
             "previous_chapter_current", "seek_current", "select_audio_current", "select_subtitle_current", "stop_current"])
         self.assertTrue(all(c["session_id"] == "local-film" for c in commands))
         self.assertEqual(commands[-1]["presentation_id"], "local-show")
+
+    async def test_standard_play_media_requests_sequence_without_releasing_it(self):
+        self.broker.state["capabilities"].append("prepare_sequence")
+        await self.player.async_play_media("movie", "nas:film", extra={"playback_mode": "sequence"})
+        self.assertEqual([c["action"] for c in self.broker.commands], ["get_state", "prepare_sequence"])
+        self.broker.commands.clear()
+        await self.player.async_play_media("cinemaseat_sequence", "nas:film")
+        self.assertEqual(self.broker.commands[-1]["action"], "prepare_sequence")
+        with self.assertRaises(HomeAssistantError):
+            await self.player.async_play_media("movie", "nas:film", extra={"playback_mode": "invalid"})
+
+    async def test_standard_play_releases_only_current_wait_point(self):
+        self.broker.state.update(status="preparing", presentation={"id": "wait-1", "phase": "preparing", "waiting_for_ha": True})
+        await self.player.async_media_play()
+        self.assertEqual(self.broker.commands[-1]["action"], "start_sequence")
+        self.assertEqual(self.broker.commands[-1]["presentation_id"], "wait-1")
+
+    async def test_flat_presentation_attributes_and_buffering(self):
+        self.player.snapshot = {"status": "playing", "buffering": True,
+            "presentation": {"id": "show", "lead": "cs", "phase": "trailer", "waiting_for_ha": False,
+                "released": True, "movie_id": "nas:main", "title": "Feature", "duration": 1000}}
+        attrs = self.player.extra_state_attributes
+        self.assertEqual((attrs["presentation_id"], attrs["sequence_phase"], attrs["feature_title"]), ("show", "trailer", "Feature"))
+        self.assertEqual(attrs["feature_duration"], 1000)
+        self.assertEqual(attrs["library_source"], "nas")
+        self.assertEqual(self.player.state, module.MediaPlayerState.BUFFERING)
+
+    async def test_dynamic_features_distinguish_current_control_and_new_starts(self):
+        F = module.MediaPlayerEntityFeature
+        self.player.snapshot = {"ha_mode": False, "can_control_playback": True,
+            "capabilities": ["start_sequence", "stop_current", "seek_current", "pause_current", "resume_current", "browse_movies"],
+            "presentation": {"id": "show", "phase": "preparing", "waiting_for_ha": True}}
+        self.assertTrue(self.player.supported_features & F.PLAY)
+        self.assertFalse(self.player.supported_features & F.SEEK)
+        self.assertFalse(self.player.supported_features & F.PLAY_MEDIA)
+        self.player.snapshot["presentation"] = {"id": "show", "phase": "movie"}
+        self.player.snapshot.update(session_id="feature", status="playing")
+        self.assertTrue(self.player.supported_features & F.SEEK)
+        self.player.snapshot.update(ha_mode=True, capabilities=["prepare", "browse_movies", "search_movies"])
+        self.assertTrue(self.player.supported_features & F.BROWSE_MEDIA)
+        self.assertTrue(self.player.supported_features & F.PLAY_MEDIA)
+        self.player.snapshot.update(presentation=None, session_id=None, status="idle")
+        self.assertEqual(self.player.supported_features, F.PLAY_MEDIA | F.BROWSE_MEDIA | F.SEARCH_MEDIA)
+
+    async def test_browse_pages_and_direct_sequence_choices(self):
+        self.player.entity_id = "media_player.test"
+        self.broker.state["capabilities"].extend(["browse_movies", "get_artwork", "prepare_sequence"])
+        self.player.snapshot = dict(self.broker.state)
+        self.broker.movies = [{"id": f"nas:{i}", "title": f"Film {i}"} for i in range(35)]
+        root = await self.player.async_browse_media()
+        self.assertEqual([c.title for c in root.children], ["Plex", "NAS"])
+        page = await self.player.async_browse_media("cinemaseat_library", "nas:0")
+        self.assertEqual(len(page.children), 31)
+        self.assertEqual(page.children[-1].media_content_id, "nas:30")
+        self.assertNotIn("private-test-token", page.children[0].thumbnail)
+        page2 = await self.player.async_browse_media("cinemaseat_library", "nas:30")
+        self.assertEqual(len(page2.children), 5)
+        choices = await self.player.async_browse_media("movie", "nas:0")
+        self.assertEqual([c.media_content_type for c in choices.children], ["movie", "cinemaseat_sequence"])
+        from homeassistant.components.media_player.errors import BrowseError
+        with self.assertRaises(BrowseError):
+            await self.player.async_browse_media("cinemaseat_library", "nas:-1")
+
+    async def test_artwork_is_bounded_cached_and_uses_player_proxy(self):
+        self.player.entity_id = "media_player.test"
+        self.player.online = True; self.player.updated = time.monotonic()
+        self.player.snapshot = {**self.broker.state, "capabilities": ["get_artwork"], "movie_id": "nas:film"}
+        self.assertIn("/api/media_player_proxy/", self.player.entity_picture)
+        first = await self.player.async_get_media_image()
+        second = await self.player.async_get_media_image()
+        self.assertEqual(first, second)
+        self.assertEqual(first[1], "image/jpeg")
+        self.assertEqual([c["action"] for c in self.broker.commands], ["get_artwork"])
+        self.player.online = False
+        self.assertEqual(await self.player.async_get_media_image(), (None, None))
+
+    async def test_position_updates_are_throttled_without_losing_seek_or_pause(self):
+        writes = []; self.player.async_write_ha_state = lambda: writes.append(1)
+        self.player.online = True
+        base = {"version": 1, "player_id": "test-player", "boot_id": "boot-1", "status": "playing", "duration": 100}
+        def receive(position, sequence, **changes):
+            self.player._state_received(SimpleNamespace(payload=json.dumps({**base, "position": position, "sequence": sequence, **changes})))
+        with patch.object(module.time, "monotonic", return_value=100):
+            receive(10, 1)
+        with patch.object(module.time, "monotonic", return_value=101):
+            receive(11, 2)
+        self.assertEqual(len(writes), 1)
+        self.assertEqual(self.player.media_position, 10)
+        self.assertEqual(self.player.snapshot["position"], 11)
+        with patch.object(module.time, "monotonic", return_value=102):
+            receive(12, 3, status="paused")
+        self.assertEqual(len(writes), 2)
+        with patch.object(module.time, "monotonic", return_value=103):
+            receive(50, 4, status="paused")
+        self.assertEqual(len(writes), 3)
+        self.assertEqual(self.player.media_position, 50)
+
+    async def test_native_track_selects_use_current_session_and_confirmed_feedback(self):
+        spec = importlib.util.spec_from_file_location("cinemaseat_under_test.select", player_path.with_name("select.py"))
+        select_module = importlib.util.module_from_spec(spec); spec.loader.exec_module(select_module)
+        self.player.hass.data["cinemaseat"]["hub"].players = {"test-player": self.player}
+        self.player.online = True; self.player.updated = time.monotonic()
+        self.broker.state.update(status="playing", session_id="local-1", owner="local", can_control_playback=True,
+            audio_tracks=[{"id":"audio-nl", "name":"Dutch"}], selected_audio_id="audio-nl",
+            subtitle_tracks=[{"id":"sub-nl", "name":"Dutch"}], subtitles_off=True)
+        self.player.snapshot = dict(self.broker.state)
+        audio = select_module.CinemaSeatTrackSelect(self.player.entry, "audio"); audio.hass = self.player.hass
+        subtitle = select_module.CinemaSeatTrackSelect(self.player.entry, "subtitle"); subtitle.hass = self.player.hass
+        self.assertTrue(audio.available)
+        self.assertEqual(audio.options, ["Dutch · audio-nl"])
+        self.assertEqual(subtitle.current_option, "Off")
+        await subtitle.async_select_option("Dutch · sub-nl")
+        self.assertEqual(self.broker.commands[-1]["session_id"], "local-1")
+        self.assertEqual(self.broker.commands[-1]["subtitle_id"], "sub-nl")
+        self.assertEqual(subtitle.current_option, "Off")
+        self.player.snapshot["presentation"] = {"phase":"trailer"}
+        self.assertFalse(audio.available)
 
     async def test_no_results_and_invalid_query(self):
         self.broker.movies=[]
@@ -399,7 +525,8 @@ class CinemaSeatTests(unittest.IsolatedAsyncioTestCase):
         self.player.async_write_ha_state=lambda: None
         task=asyncio.create_task(self.player.async_play_media("movie","1"))
         await asyncio.sleep(.01)
-        self.player._availability_received(SimpleNamespace(payload="offline"))
+        with patch.object(module, "async_dispatcher_send"):
+            self.player._availability_received(SimpleNamespace(payload="offline"))
         with self.assertRaisesRegex(HomeAssistantError,"disconnected"): await task
         self.assertEqual(self.player.pending,{})
 

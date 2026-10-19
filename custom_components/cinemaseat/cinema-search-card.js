@@ -145,7 +145,7 @@ class CinemaSeatSearchCard extends HTMLElement {
     curtain.disabled=this._busy||unavailable||!["idle","stopped","ended","error"].includes(status)||
       !(attributes.capabilities||[]).includes("show_curtain");
     curtain.title=(attributes.capabilities||[]).includes("show_curtain") ?
-      "Show or hide the closed curtain before starting a film" : "Update the CinemaSeat tvOS app to use Show curtain";
+      "Show or hide the closed curtain before starting a film" : "Standalone curtain is retired; use Play Sequence";
     const presentation=attributes.presentation;
     const preroll=!!presentation&&presentation.phase!=="movie";
     this.shadowRoot.querySelector("#skipSequence").hidden=!preroll;
@@ -156,7 +156,7 @@ class CinemaSeatSearchCard extends HTMLElement {
     for (const button of this.shadowRoot.querySelectorAll("button[data-service]")) {
       const service=button.dataset.service;
       let allowed=current||service==="media_stop"&&!!presentation;
-      if (service==="media_play") allowed=current&&["ready","paused"].includes(status);
+      if (service==="media_play") allowed=!!presentation?.waiting_for_ha||current&&["ready","paused"].includes(status);
       else if (service==="media_pause") allowed=current&&status==="playing";
       else if (service!=="media_stop") allowed=current&&["playing","paused"].includes(status);
       button.disabled=this._busy||unavailable||!allowed||(attributes.can_control_playback??attributes.ha_mode)===false;
@@ -302,7 +302,7 @@ class CinemaSeatSearchCard extends HTMLElement {
     finally {this._busy=false;this._update();}
   }
   async _prepareSequence(movie, tracks={}) {
-    await this._sequenceAction("prepare_sequence",{movie_id:movie.media_content_id,...tracks});
+    await this._play(movie,{...tracks,playback_mode:"sequence"});
   }
   async _moveTimecode() {
     if (this._busy||this.shadowRoot.querySelector("#moveTimecode").disabled) return;
@@ -323,7 +323,7 @@ class CinemaSeatSearchCard extends HTMLElement {
     try {
       await this._hass.callWS({type:"call_service",domain:"media_player",service:"play_media",target:{entity_id:this._entity()},
         service_data:{media_content_type:"movie",media_content_id:movie.media_content_id,extra}});
-      this._message("Film started: "+movie.title);
+      this._message(extra.playback_mode==="sequence"?"Sequence requested. HA or Play releases its start.":"Film started: "+movie.title);
     } catch (err) {this._message(err.message||String(err),true);}
     finally {this._busy=false;this._update();}
   }
