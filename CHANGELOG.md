@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.10.0 — 2026-10-19
+
+- Remove the separate ATV HA mode. A paired foreground app connects automatically; the HA shortcut opens connection settings/status.
+- Add persistent Allow control from Home Assistant permission, off by default on install/upgrade. Pairing retains read-only library/status access. Changing the HA destination or clearing pairing resets permission.
+- Open the correct film/sequence player automatically on an HA start. Retain ATV remote control and correlated sequence-release automations.
+- Separate `can_browse_library`, `can_start_playback`, `remote_control_allowed` and `can_control_playback`. Retain `ha_mode` only as a compatibility alias for permission, including fallback support for older apps.
+- Keep active films/sequences protected from replacement, including local sequence startup during an existing HA lease. Local direct playback remains outside HA control and sequence events. Revoking permission leaves playback running.
+- Update the dashboard, permission messages, five-language app labels and documentation.
+- Verified: Swift remote/presentation and settings regressions, 38 HA tests, 14 pairing/WebSocket tests, 10 dashboard tests, localization and arm64 tvOS simulator build. Physical device/live HACS upgrade validation remains pending.
+
 ## 0.9.0 — 2026-10-19
 
 - Use standard `media_player.play_media` for NAS Play Sequence and `media_player.media_play` for manual release of the current wait point. Keep explicit presentation IDs for delayed automation releases.

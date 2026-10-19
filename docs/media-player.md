@@ -1,6 +1,8 @@
-# CinemaSeat media player — 0.9.0
+# CinemaSeat media player — 0.10.0
 
 Update both the CinemaSeat app and the HA integration, then restart Home Assistant. Existing player entity IDs and pairing are retained. HA adds Audio and Subtitles select entities to the same device; their entity IDs follow your HA naming settings.
+
+The HA home-screen icon now opens connection settings/status. HA-started playback opens its player automatically. Backgrounding closes the connection; reopening reconnects without a mode switch or restarting playback. Existing pairing/entity IDs and presentation-ID automations are retained. Enable control before using a sequence configured to wait for HA; otherwise use Start anyway on ATV.
 
 ## Standard media player actions
 
@@ -16,7 +18,7 @@ Update both the CinemaSeat app and the HA integration, then restart Home Assista
 | `media_player.browse_media` | Browse Plex/NAS folders, 30 films per page. Expand a NAS film to choose Direct Play or Play Sequence. |
 | `media_player.search_media` | Search the indexed library; existing source-specific search types are retained. |
 
-HA mode is required to browse/search or select/start new content. HA and the ATV remote can both control a locally started active Play Sequence outside HA mode. Local direct playback has no HA sequence interaction. `supported_features` follows the current mode, app capabilities and presentation phase. The app does not advertise volume, mute, power or shuffle controls.
+There is no separate HA mode. A paired app connects automatically while open. Library/status reads remain available. Enable **Allow control from Home Assistant** in the ATV HA settings to start or control playback. This persistent permission defaults to off, including on upgrade, and resets when the HA destination or pairing is cleared. HA and the ATV remote can both control an active Play Sequence when permission is enabled. Local direct playback has no HA sequence interaction. `supported_features` follows permission, app capabilities and presentation phase. An active film/sequence must be stopped before starting another. Disabling HA control leaves current playback running locally. The app does not advertise volume, mute, power or shuffle controls.
 
 Example using your existing player and an indexed NAS film ID from search/browse:
 
@@ -49,7 +51,11 @@ This prepares the sequence and waits for release. It does not bypass your room-p
 | `chapter_id` | Current feature chapter identifier, if available. |
 | `audio_tracks`, `subtitle_tracks` | Available track IDs and labels. |
 | `selected_audio_id`, `selected_subtitle_id`, `subtitles_off` | Confirmed player track feedback. |
-| `ha_mode`, `can_control_playback` | Permission to start new content versus control the current playback. |
+| `remote_control_allowed` | Persistent ATV permission for HA playback commands. |
+| `can_browse_library` | Paired library/status access, independent of playback permission. |
+| `can_start_playback` | Playback permission plus no active film/sequence. |
+| `can_control_playback` | Playback permission plus an active sequence or HA-started film. Local direct playback remains outside HA control. |
+| `ha_mode` | Deprecated compatibility alias for `remote_control_allowed`; no screen/mode switch is required. |
 | `player_id`, `boot_id`, `session_id`, `owner` | Player, app run, current clip session and ownership. |
 | `status`, `buffering`, `error_code`, `capabilities` | Underlying app status, buffering/error and advertised commands. |
 | `pairing_required`, `presentation` | Pairing indicator and retained structured presentation for compatibility. |

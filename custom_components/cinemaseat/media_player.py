@@ -240,7 +240,7 @@ class CinemaSeatPlayer(MediaPlayerEntity):
                 "library_source": "nas" if (presentation.get("movie_id") or self.media_content_id or "").startswith("nas:") else "plex" if self.media_content_id else None}
         return {**flat, "pairing_required": not bool(self.entry.data.get("auth_token")), **{k: self.snapshot.get(k) for k in [
             "player_id", "boot_id", "session_id", "status", "owner", "buffering", "error_code",
-            "capabilities", "curtain_state", "presentation", "ha_mode", "can_control_playback", "chapter_id",
+            "capabilities", "curtain_state", "presentation", "ha_mode", "remote_control_allowed", "can_start_playback", "can_browse_library", "can_control_playback", "chapter_id",
             "audio_tracks", "subtitle_tracks", "selected_audio_id", "selected_subtitle_id", "subtitles_off",
         ]}}
 
@@ -252,9 +252,9 @@ class CinemaSeatPlayer(MediaPlayerEntity):
         if "ha_mode" not in self.snapshot:  # Backward-compatible older app.
             return self._attr_supported_features
         features = MediaPlayerEntityFeature(0)
-        if self.snapshot.get("ha_mode"):
-            if "prepare" in caps:
-                features |= MediaPlayerEntityFeature.PLAY_MEDIA
+        if self.snapshot.get("can_start_playback", self.snapshot.get("ha_mode")) and "prepare" in caps:
+            features |= MediaPlayerEntityFeature.PLAY_MEDIA
+        if self.snapshot.get("can_browse_library", self.snapshot.get("ha_mode")):
             if "search_movies" in caps:
                 features |= MediaPlayerEntityFeature.SEARCH_MEDIA
             if "browse_movies" in caps:
@@ -327,7 +327,7 @@ class CinemaSeatPlayer(MediaPlayerEntity):
         if media_content_type in {"movie", "cinemaseat_sequence"} and media_content_id:
             def option(kind, title):
                 return BrowseMedia(title=title, media_class=MediaClass.MOVIE, media_content_type=kind,
-                    media_content_id=media_content_id, can_play=True, can_expand=False)
+                    media_content_id=media_content_id, can_play=self.snapshot.get("can_start_playback", True), can_expand=False)
             options = [option("movie", "Play directly")]
             if media_content_id.startswith("nas:") and "prepare_sequence" in self.snapshot.get("capabilities", []):
                 options.append(option("cinemaseat_sequence", "Play Sequence"))
@@ -352,7 +352,7 @@ class CinemaSeatPlayer(MediaPlayerEntity):
         movies = reply.get("movies", [])
         children = [BrowseMedia(title=movie["title"] + (f" ({movie['year']})" if movie.get("year") else ""),
             media_class=MediaClass.MOVIE, media_content_type="movie", media_content_id=movie["id"],
-            can_play=True, can_expand=True, thumbnail=self.get_browse_image_url("movie", movie["id"])
+            can_play=state.get("can_start_playback", True), can_expand=True, thumbnail=self.get_browse_image_url("movie", movie["id"])
                 if "get_artwork" in state.get("capabilities", []) else None) for movie in movies]
         next_offset = offset + len(movies)
         if movies and next_offset < reply.get("total", next_offset):
@@ -362,6 +362,9 @@ class CinemaSeatPlayer(MediaPlayerEntity):
     async def _request(self, action, state=None, *, timeout=20, operation=None, **fields):
         if self._unloading:
             raise HomeAssistantError("CinemaSeat was unloaded")
+        if (state and state.get("remote_control_allowed") is False
+                and action not in {"get_state", "search_movies", "get_movie_details", "browse_movies", "get_artwork"}):
+            raise HomeAssistantError("Enable Allow control from Home Assistant in CinemaSeat's HA settings")
         command_id = str(uuid4())
         future = self.hass.loop.create_future()
         self.pending[command_id] = {
@@ -381,7 +384,10 @@ class CinemaSeatPlayer(MediaPlayerEntity):
             await self._send_command(command)
             reply = await asyncio.wait_for(future, timeout=timeout)
             if reply["status"] == "rejected":
-                raise HomeAssistantError("CinemaSeat: " + reply.get("code", "rejected"))
+                code = reply.get("code", "rejected")
+                if code == "remote_control_disabled":
+                    raise HomeAssistantError("Enable Allow control from Home Assistant in CinemaSeat's HA settings")
+                raise HomeAssistantError("CinemaSeat: " + code)
             return reply
         except TimeoutError as err:
             raise HomeAssistantError("CinemaSeat did not respond; check the paired CinemaSeat app and its HA connection") from err
@@ -409,7 +415,7 @@ class CinemaSeatPlayer(MediaPlayerEntity):
             media_class=MediaClass.MOVIE, media_content_type=MediaType.MOVIE,
             media_content_id=movie["id"],
             title=movie["title"] + (f" ({movie['year']})" if movie.get("year") else "") + (" [NAS]" if movie["id"].startswith("nas:") else " [Plex]"),
-            can_play=True, can_expand=False,
+            can_play=state.get("can_start_playback", True), can_expand=False,
         ) for movie in reply.get("movies", [])])
 
     async def _heartbeat(self, state, control):

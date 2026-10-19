@@ -1,3 +1,5 @@
+> Version 0.10.0 removes the separate HA mode. Keep CinemaSeat open and enable Allow control from Home Assistant in its HA settings. Paired library/status access is independent of playback permission. See the [current media-player reference](media-player.md); mode-switch instructions below describe older app versions.
+
 > Version 0.9.0: see [current native media-player actions, attributes and selectors](media-player.md).
 
 > Version 0.8.0 adds NAS Play Sequence and two-mode presentation control. See [current sequence actions, events and handshake](sequence-control.md). Standalone curtain instructions below apply to older ATV builds; the current app uses the curtain only in Play Sequence.

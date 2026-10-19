@@ -1,3 +1,5 @@
+> Version 0.10.0 removes the separate HA mode. Keep CinemaSeat open and enable Allow control from Home Assistant in its HA settings. Paired library/status access is independent of playback permission. See the [current media-player reference](media-player.md); mode-switch instructions below describe older app versions.
+
 > Version 0.8.0 adds NAS Play Sequence and two-mode presentation control. See [current sequence actions, events and handshake](sequence-control.md). Standalone curtain instructions below apply to older ATV builds; the current app uses the curtain only in Play Sequence.
 
 # Direct protocol and pairing
@@ -55,3 +57,7 @@ Commands retain version 1, pairing authentication, expiry and boot checks. `brow
 `get_artwork` accepts an indexed `movie_id`. It returns `artwork` as base64 JPEG, maximum 90,000 decoded bytes. The app reads at most 4 MiB of source image data and scales to at most 400 pixels per dimension. JSON frames avoid escaping base64 slashes and remain within the 131,072-byte transport limit. At most two artwork reads run concurrently, separate from the serial control queue; HA queues additional thumbnails and caches eight images for five minutes per app boot. Outside HA mode only the active feature/current movie artwork is accessible. No arbitrary URL/path can be requested by HA.
 
 Presentation state includes optional indexed feature `duration`. `curtain_state` now reflects actual `preparing`, `closed`, `opening`, `hidden` transitions, with `curtain_state_changed` presentation events.
+
+## Persistent permission (0.10.0)
+
+A paired foreground app stays connected even with playback permission disabled. `remote_control_allowed` reports the persistent ATV setting. `can_browse_library` remains true for paired reads; `can_start_playback` requires permission and no active session/presentation. `can_control_playback` requires permission and an active sequence or HA-started film. `ha_mode` is a deprecated alias for permission, not a screen selection. Mutating commands fail with `remote_control_disabled` when permission is off. Local direct playback rejects current transport commands with `local_direct_playback`. Preparation rechecks presentation occupancy after asynchronous work to avoid replacing a sequence that has started locally.

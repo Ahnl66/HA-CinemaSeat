@@ -152,7 +152,7 @@ class PlayerHub:
     async def send(self, player_id, command):
         socket = self.sockets.get(player_id)
         if not socket or socket.closed:
-            raise HomeAssistantError("CinemaSeat disconnected; open CinemaSeat and select HA mode")
+            raise HomeAssistantError("CinemaSeat disconnected; open the paired CinemaSeat app")
         try:
             await socket.send_json({"type": "command", "command": command})
         except (ConnectionError, RuntimeError) as err:

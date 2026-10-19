@@ -342,6 +342,27 @@ class CinemaSeatTests(unittest.IsolatedAsyncioTestCase):
         self.player.snapshot.update(presentation=None, session_id=None, status="idle")
         self.assertEqual(self.player.supported_features, F.PLAY_MEDIA | F.BROWSE_MEDIA | F.SEARCH_MEDIA)
 
+    async def test_persistent_permission_allows_read_only_library_and_blocks_commands(self):
+        F = module.MediaPlayerEntityFeature
+        self.broker.state.update(ha_mode=False, remote_control_allowed=False, can_browse_library=True,
+            can_start_playback=False, can_control_playback=False,
+            capabilities=["prepare", "search_movies", "browse_movies", "get_movie_details"])
+        self.player.snapshot = dict(self.broker.state)
+        self.assertEqual(self.player.supported_features, F.BROWSE_MEDIA | F.SEARCH_MEDIA)
+        attrs = self.player.extra_state_attributes
+        self.assertFalse(attrs["remote_control_allowed"])
+        self.assertTrue(attrs["can_browse_library"])
+        await self.player.async_search_media(SearchMediaQuery(search_query="title"))
+        await self.player.async_movie_details("1")
+        with self.assertRaisesRegex(HomeAssistantError, "Allow control"):
+            await self.player.async_play_media("movie", "1")
+        self.assertNotIn("claim_control", [c["action"] for c in self.broker.commands])
+        self.broker.state.update(ha_mode=True, remote_control_allowed=True, can_start_playback=True)
+        self.player.snapshot = dict(self.broker.state)
+        self.assertTrue(self.player.supported_features & F.PLAY_MEDIA)
+        await self.player.async_play_media("movie", "1")
+        self.assertIn("start", [c["action"] for c in self.broker.commands])
+
     async def test_browse_pages_and_direct_sequence_choices(self):
         self.player.entity_id = "media_player.test"
         self.broker.state["capabilities"].extend(["browse_movies", "get_artwork", "prepare_sequence"])

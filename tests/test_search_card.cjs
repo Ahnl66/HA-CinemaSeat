@@ -159,3 +159,22 @@ test('locally started sequence allows transport while new film starts still requ
  attributes.can_control_playback=false;card.hass=hass;
  assert.equal(card.shadowRoot.querySelector('[data-service="media_play"]').disabled,true);
 });
+
+
+test('paired library stays readable without a mode; persistent permission gates all start buttons',async()=>{
+ const {card,calls,hass}=fixture();const attributes=hass.states[a].attributes;
+ attributes.ha_mode=false;attributes.remote_control_allowed=false;attributes.can_browse_library=true;
+ attributes.can_start_playback=false;attributes.can_control_playback=false;attributes.status='idle';
+ attributes.capabilities=['prepare_sequence'];card.hass=hass;
+ card._results=[{media_content_id:'nas:film',title:'Film'}];card._renderResults();card._update();
+ assert.equal(card.shadowRoot.querySelector('form input').disabled,false);
+ assert.equal(card.shadowRoot.querySelector('button.play').disabled,true);
+ assert.equal(card.shadowRoot.querySelector('button.details').disabled,false);
+ assert.equal(card.shadowRoot.querySelector('#startSelected').disabled,true);
+ await card._play({media_content_id:'nas:film',title:'Film'});assert.equal(calls.length,0);
+ attributes.ha_mode=true;attributes.remote_control_allowed=true;attributes.can_start_playback=true;card.hass=hass;
+ assert.equal(card.shadowRoot.querySelector('button.play').disabled,false);
+ attributes.status='playing';attributes.can_start_playback=false;attributes.can_control_playback=true;card.hass=hass;
+ assert.equal(card.shadowRoot.querySelector('button.play').disabled,true);
+ assert.equal(card.shadowRoot.querySelector('[data-service="media_pause"]').disabled,false);
+});

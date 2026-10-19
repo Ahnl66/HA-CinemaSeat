@@ -38,7 +38,7 @@ class CinemaSeatSearchCard extends HTMLElement {
         <label for="source">Library source</label><select id="source"><option value="all">Plex and NAS</option><option value="nas">NAS</option><option value="plex">Plex</option></select>
         <form><input aria-label="Film title" placeholder="Search for a film…" maxlength="128" required><button type="submit">Search</button></form>
         <div class="controls"><input id="timecode" aria-label="Move to Timecode" placeholder="HH:MM:SS" inputmode="numeric"><button id="moveTimecode">Move to Timecode</button></div>
-        <p class="hint">Open CinemaSeat and select the HA icon on your player. Stop the current film before starting another. Use Options to choose audio and subtitles before starting.</p>
+        <p class="hint">Open CinemaSeat. Enable Allow control from Home Assistant in its HA settings to start films. Stop the current film before starting another. Use Options to choose audio and subtitles before starting.</p>
         <div id="message" role="status" aria-live="polite"></div><div id="results"></div>
         <section id="selection" class="tracks" hidden>
           <h3 id="selectionTitle"></h3>
@@ -110,28 +110,31 @@ class CinemaSeatSearchCard extends HTMLElement {
     const state=this._hass.states[this._entity()];
     const unavailable=!state||["unavailable","unknown"].includes(state.state);
     const attributes=state?.attributes||{};
+    const canBrowse=attributes.can_browse_library??attributes.ha_mode;
+    const canStart=attributes.can_start_playback??attributes.ha_mode;
     if (this._selection&&attributes.boot_id&&this._selection.boot_id!==attributes.boot_id) {
       this._selection=null;this._renderSelection();
     }
-    this.shadowRoot.querySelector("form input").disabled=this._busy||unavailable||attributes.ha_mode===false;
-    this.shadowRoot.querySelector("form button").disabled=this._busy||unavailable||attributes.ha_mode===false;
-    this.shadowRoot.querySelector("#source").disabled=this._busy||unavailable||attributes.ha_mode===false;
+    this.shadowRoot.querySelector("form input").disabled=this._busy||unavailable||canBrowse===false;
+    this.shadowRoot.querySelector("form button").disabled=this._busy||unavailable||canBrowse===false;
+    this.shadowRoot.querySelector("#source").disabled=this._busy||unavailable||canBrowse===false;
     select.disabled=this._busy;
     const active=!!attributes.presentation||!["idle","stopped","ended","error"].includes(attributes.status);
-    for (const button of this.shadowRoot.querySelectorAll("button.play")) button.disabled=this._busy||unavailable||active;
+    for (const button of this.shadowRoot.querySelectorAll("button.play")) button.disabled=this._busy||unavailable||active||canStart===false;
     for (const button of this.shadowRoot.querySelectorAll("button.details")) button.disabled=this._busy||unavailable;
-    this.shadowRoot.querySelector("#startSelected").disabled=this._busy||unavailable||active||attributes.ha_mode===false;
+    this.shadowRoot.querySelector("#startSelected").disabled=this._busy||unavailable||active||canStart===false;
     const sequence=this.shadowRoot.querySelector("#sequenceSelected");
     sequence.hidden=!this._selection?.id?.startsWith("nas:")||!(attributes.capabilities||[]).includes("prepare_sequence");
-    sequence.disabled=this._busy||unavailable||active||attributes.ha_mode===false;
-    for (const button of this.shadowRoot.querySelectorAll("button.sequence")) button.disabled=this._busy||unavailable||active||attributes.ha_mode===false;
+    sequence.disabled=this._busy||unavailable||active||canStart===false;
+    for (const button of this.shadowRoot.querySelectorAll("button.sequence")) button.disabled=this._busy||unavailable||active||canStart===false;
     const automation=this.shadowRoot.querySelector("#makeAutomation");
     automation.disabled=this._busy||unavailable||!this._selection||!this._hass.user?.is_admin;
     automation.title=this._hass.user?.is_admin ? "Save these choices as a reusable automation" : "A Home Assistant administrator is required to create automations";
     for (const id of ["startAudio","startSubtitle"]) this.shadowRoot.querySelector("#"+id).disabled=this._busy||unavailable;
     this._renderPlayback(state,unavailable);
     this._renderCurrent(attributes,unavailable);
-    if (!this._busy&&unavailable) this._message(attributes.pairing_required ? "Pair CinemaSeat in its HA settings, then use Reconfigure in Home Assistant." : "HA mode disconnected. Open CinemaSeat and select the HA icon.");
+    if (!this._busy&&unavailable) this._message(attributes.pairing_required ? "Pair CinemaSeat in its HA settings, then use Reconfigure in Home Assistant." : "CinemaSeat disconnected. Open the paired CinemaSeat app.");
+    else if (!this._busy&&attributes.remote_control_allowed===false) this._message("Library available. Enable Allow control from Home Assistant in CinemaSeat's HA settings to start or control films.");
     else if (!this._busy&&this._offline) this._message("");
     this._offline=unavailable;
   }
@@ -319,6 +322,10 @@ class CinemaSeatSearchCard extends HTMLElement {
     finally {this._busy=false;this._update();}
   }
   async _play(movie,extra={}) {
+    const attributes=this._hass.states[this._entity()]?.attributes||{};
+    if ((attributes.can_start_playback??attributes.ha_mode)===false) {
+      this._message("Enable Allow control from Home Assistant in CinemaSeat's HA settings and stop the current film before starting another.");return;
+    }
     if (this._busy) return;this._busy=true;this._update();this._message("Preparing and starting the film…");
     try {
       await this._hass.callWS({type:"call_service",domain:"media_player",service:"play_media",target:{entity_id:this._entity()},
