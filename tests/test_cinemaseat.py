@@ -39,7 +39,7 @@ class Broker:
         self.foreign_reply = False
 
     def reply(self, command, status="executed", **fields):
-        reply = {"version": 1, "command_id": command["command_id"],
+        reply = {"version": command.get("version", 1), "command_id": command["command_id"],
                  "boot_id": command.get("boot_id", self.state["boot_id"]), "status": status, **fields}
         self.player._reply_received(SimpleNamespace(payload=json.dumps(reply)))
 
@@ -67,7 +67,7 @@ class Broker:
             self.reply(command, "accepted", session_id=self.state["session_id"])
         elif action == "claim_control": self.reply(command, control_id="lease-1")
         elif action == "prepare":
-            if command["movie_id"] == "missing":
+            if command["movie_id"] == "999999":
                 self.reply(command, "rejected", code="movie_not_found"); return
             self.state.update(session_id="session-1", status="preparing", owner="external")
             self.reply(command, "accepted", session_id="session-1")
@@ -363,6 +363,51 @@ class CinemaSeatTests(unittest.IsolatedAsyncioTestCase):
         await self.player.async_play_media("movie", "1")
         self.assertIn("start", [c["action"] for c in self.broker.commands])
 
+    async def test_scoped_video_servers_protocol_and_artwork_generation(self):
+        def movie_id(kind):
+            return "vs1:" + kind + ":" + "a" * 64 + ":movie:" + base64.urlsafe_b64encode(b"12345678-1234-1234-1234-123456789012").decode().rstrip("=")
+        jelly = movie_id("jellyfin")
+        kyoo = movie_id("kyoo")
+        self.assertGreater(len(jelly), 128)
+        self.assertEqual(module.media_source(jelly), "jellyfin")
+        self.assertEqual(module.media_source(kyoo), "kyoo")
+        self.assertIsNone(module.media_source(jelly.replace(":movie:", ":playlist:")))
+        self.assertIsNone(module.media_source("unrecognized-item"))
+        self.broker.state.update(version=2, enabled_sources=["jellyfin", "nas"], server_generation="runtime-a")
+        self.broker.state["capabilities"].extend(["scoped_media_ids_v1", "browse_movies", "get_artwork"])
+        self.broker.movies = [{"id": jelly, "title": "Scoped film"}]
+        self.player.snapshot = dict(self.broker.state)
+        root = await self.player.async_browse_media()
+        self.assertEqual([value.title for value in root.children], ["Jellyfin", "NAS"])
+        result = await self.player.async_search_media(SearchMediaQuery(search_query="Scoped", media_content_type="cinemaseat_jellyfin"))
+        self.assertEqual(result.result[0].media_content_id, jelly)
+        self.assertIn("[Jellyfin]", result.result[0].title)
+        details = await self.player.async_movie_details(jelly)
+        self.assertEqual(details["movie"]["id"], jelly)
+        self.assertEqual(self.broker.commands[-1]["version"], 2)
+        self.assertEqual(self.broker.commands[-1]["movie_id"], jelly)
+        count = len(self.broker.commands)
+        with self.assertRaisesRegex(HomeAssistantError, "source is disabled"):
+            await self.player.async_movie_details(kyoo)
+        self.assertNotIn("get_movie_details", [c["action"] for c in self.broker.commands[count:]])
+        self.player.online = True; self.player.updated = time.monotonic()
+        self.assertEqual(await self.player._get_artwork(jelly), (b"\xff\xd8\xff\xd9", "image/jpeg"))
+        image_count = sum(c["action"] == "get_artwork" for c in self.broker.commands)
+        await self.player._get_artwork(jelly)
+        self.assertEqual(sum(c["action"] == "get_artwork" for c in self.broker.commands), image_count)
+        self.player.snapshot["server_generation"] = "runtime-b"
+        await self.player._get_artwork(jelly)
+        self.assertEqual(sum(c["action"] == "get_artwork" for c in self.broker.commands), image_count + 1)
+        self.player.snapshot["server_generation"] = "runtime-c"
+        async def late_image(*args, **kwargs):
+            self.player.snapshot["server_generation"] = "runtime-d"
+            return {"artwork": base64.b64encode(b"\xff\xd8\xff\xd9").decode()}
+        with patch.object(self.player, "_request", side_effect=late_image):
+            self.assertEqual(await self.player._get_artwork(jelly), (None, None))
+        self.player.snapshot["version"] = 3
+        with self.assertRaisesRegex(HomeAssistantError, "Update"):
+            await self.player._request("get_state")
+
     async def test_disabled_sources_hide_browse_and_reject_stale_ids(self):
         from homeassistant.components.media_player.errors import BrowseError
         self.broker.state["enabled_sources"] = ["nas"]
@@ -501,7 +546,7 @@ class CinemaSeatTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_movie_releases_control(self):
         with self.assertRaisesRegex(HomeAssistantError,"movie_not_found"):
-            await self.player.async_play_media("movie","missing")
+            await self.player.async_play_media("movie","999999")
         self.assertEqual(self.broker.commands[-1]["action"],"release_control")
         self.assertNotIn("start",[c["action"] for c in self.broker.commands])
 

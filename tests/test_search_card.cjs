@@ -52,6 +52,26 @@ test('search, film start and track changes share the same player selector',async
  assert.equal(calls.at(-1).target.entity_id,b);assert.equal(calls.at(-1).service_data.session_id,'session-1');
 });
 
+test('search sends both media fields when a source is selected',async()=>{
+ const {card,calls}=fixture();
+ card.shadowRoot.querySelector('form input').value='Fantasia';
+ await card._search();
+ assert.deepEqual(calls.at(-1),{type:'media_player/search_media',entity_id:a,search_query:'Fantasia'});
+ card.shadowRoot.querySelector('#source').value='nas';
+ await card._search();
+ assert.deepEqual(calls.at(-1),{type:'media_player/search_media',entity_id:a,search_query:'Fantasia',
+  media_content_type:'cinemaseat_nas',media_content_id:'nas:0'});
+});
+
+test('both timecode fields offer a keyboard with colon entry',()=>{
+ const {card}=fixture();
+ for(const selector of ['#timecode','#markerTimecode']){
+  const field=card.shadowRoot.querySelector(selector);
+  assert.equal(field.type,'text');
+  assert.equal(field.inputMode,'text');
+ }
+});
+
 test('curtain toggle follows selected player, confirmed state and capability',async()=>{
  const {card,calls,hass,select}=fixture();
  for (const entity of [a,b]) {
@@ -74,7 +94,7 @@ test('curtain toggle follows selected player, confirmed state and capability',as
 });
 
 function movieChoices(card) {
- card._selection={id:'movie-123',title:'Film <2026>',boot_id:'old-boot',audio:[{id:'audio-nl',name:'Dutch'}],subtitles:[{id:'sub-en',name:'English'}]};
+ card._selection={id:'123',title:'Film <2026>',boot_id:'old-boot',audio:[{id:'audio-nl',name:'Dutch'}],subtitles:[{id:'sub-en',name:'English'}]};
  card._renderSelection();card._update();
  card.shadowRoot.querySelector('#startAudio').value='audio-nl';
  card.shadowRoot.querySelector('#startSubtitle').value='sub-en';
@@ -88,7 +108,7 @@ test('automation saves current player and choices, curtain then ten-second delay
  const config=saved[0][2];assert.equal(config.alias,'CinemaSeat - Film <2026>');
  assert.deepEqual(config.triggers,[]);assert.deepEqual(config.conditions,[]);
  assert.deepEqual(config.actions,[{action:'cinemaseat.show_curtain',target:{entity_id:b},data:{show:true}},{delay:{seconds:10}},
-  {action:'media_player.play_media',target:{entity_id:b},data:{media_content_type:'movie',media_content_id:'movie-123',extra:{audio_id:'audio-nl',subtitle_id:'sub-en',subtitles_off:false}}}]);
+  {action:'media_player.play_media',target:{entity_id:b},data:{media_content_type:'movie',media_content_id:'123',extra:{audio_id:'audio-nl',subtitle_id:'sub-en',subtitles_off:false}}}]);
  assert.equal(JSON.stringify(config).includes('boot'),false);assert.equal(calls.length,0);
  assert.match(card.shadowRoot.querySelector('#message a').getAttribute('href'),/^\/config\/automation\/edit\/cinemaseat_/);
  await card._makeAutomation();assert.notEqual(saved[0][1],saved[1][1]);
@@ -297,4 +317,22 @@ test('disabled sources remove old search selections, browse buttons and source o
  attrs.enabled_sources=['plex','nas'];attrs.can_browse_library=true;attrs.can_start_playback=true;card.hass=hass;
  assert.equal(card.shadowRoot.querySelector('#browsePlex').hidden,false);
  assert.equal(card.shadowRoot.querySelector('#source option[value="plex"]').hidden,false);
+});
+
+test('scoped server IDs retain their source and runtime changes discard old selections',()=>{
+ const {card,hass}=fixture();const attrs=hass.states[a].attributes;
+ const id=kind=>'vs1:'+kind+':'+('a'.repeat(64))+':movie:'+Buffer.from('12345678-1234-1234-1234-123456789012').toString('base64url');
+ attrs.enabled_sources=['jellyfin','nas'];attrs.server_generation='runtime-a';card.hass=hass;
+ card._results=[{media_content_id:id('jellyfin'),title:'JF'},{media_content_id:id('kyoo'),title:'Kyoo'},{media_content_id:'unknown',title:'Unknown'}];
+ card._selection={id:id('jellyfin'),title:'JF'};card._renderSelection();card.hass=hass;
+ assert.equal(card._results.length,1);assert.equal(card._selection.id,id('jellyfin'));
+ assert.equal(card.shadowRoot.querySelector('#browseJellyfin').hidden,false);
+ assert.equal(card.shadowRoot.querySelector('#browseKyoo').hidden,true);
+ assert.equal(card.shadowRoot.querySelector('#browsePlex').hidden,true);
+ assert.equal(card.shadowRoot.querySelector('#source option[value="jellyfin"]').hidden,false);
+ attrs.server_generation='runtime-b';card.hass=hass;
+ assert.equal(card._results.length,0);assert.equal(card._selection,null);
+ attrs.enabled_sources=['kyoo'];attrs.server_generation='runtime-c';card.hass=hass;
+ assert.equal(card.shadowRoot.querySelector('#browseKyoo').hidden,false);
+ assert.equal(card.shadowRoot.querySelector('#source').options[0].textContent,'Kyoo');
 });

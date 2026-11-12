@@ -58,7 +58,7 @@ def _register_services(hass):
     )
     service.async_register_platform_entity_service(
         hass, "cinemaseat", "movie_details", entity_domain="media_player",
-        schema={vol.Required("movie_id"): vol.All(cv.string, vol.Length(min=1, max=128))},
+        schema={vol.Required("movie_id"): vol.All(cv.string, vol.Length(min=1, max=1600))},
         func="async_movie_details", supports_response=SupportsResponse.ONLY,
     )
     service.async_register_platform_entity_service(

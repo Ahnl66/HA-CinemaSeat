@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Pair CinemaSeat",
-        "description": "Keep this form open. On the Apple TV, open CinemaSeat \u2192 Settings \u2192 Home Assistant, enter this Home Assistant address and port, and request a pairing code. Enter the six digits shown on the TV. The player ID and connection key are transferred automatically.",
+        "description": "Keep this form open. On the Apple TV, open CinemaSeat \u2192 Settings \u2192 Home Assistant, enter this Home Assistant address and port, and request a pairing code. Enter the six digits shown on the TV. The player ID and connection key are transferred automatically. A new code from the same player replaces its connection key and keeps the existing entity.",
         "data": {
           "pairing_code": "Six-digit code shown on Apple TV",
           "name": "Player name (optional)"
@@ -20,7 +20,8 @@
     },
     "error": {
       "invalid_code": "Code is invalid, expired, or the Apple TV disconnected. Request a new six-digit code.",
-      "wrong_player": "This code belongs to another Apple TV. Request a code on the original player."
+      "wrong_player": "This code belongs to another Apple TV. Request a code on the original player.",
+      "player_disabled": "Enable the existing CinemaSeat integration entry before pairing it again."
     },
     "abort": {
       "already_configured": "This player is already configured. Open its CinemaSeat entry and choose Reconfigure to pair it again.",

@@ -86,6 +86,7 @@ class PairingTests(unittest.IsolatedAsyncioTestCase):
         flow = flow_module.CinemaSeatConfigFlow()
         flow.hass = SimpleNamespace(data={"cinemaseat":{"hub":self.hub}})
         flow.async_set_unique_id = AsyncMock()
+        flow._async_current_entries = lambda: []
         flow._abort_if_unique_id_configured = lambda: None
         pairing = self.hub.begin_pairing("automatic-id", self.socket, "local")
         with patch.object(flow_module, "async_setup_component", AsyncMock(return_value=True)):
@@ -96,6 +97,41 @@ class PairingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["data"]["player_id"], "automatic-id")
         self.assertNotIn("pairing_code", result["data"])
         self.assertEqual(result["title"], "Living room")
+        await self.hub.shutdown()
+
+    async def test_add_flow_reconnects_existing_player_without_creating_an_entry(self):
+        flow = flow_module.CinemaSeatConfigFlow()
+        flow.hass = SimpleNamespace(data={"cinemaseat":{"hub":self.hub}})
+        entry = SimpleNamespace(title="Existing player", entry_id="existing", disabled_by=None,
+                                data={"player_id":"tv", "auth_token":"old-token"*8})
+        flow.async_set_unique_id = AsyncMock()
+        flow._async_current_entries = lambda: [entry]
+        flow.async_update_reload_and_abort = unittest.mock.Mock(return_value={"type":"abort"})
+        pairing = self.hub.begin_pairing("tv", self.socket, "local")
+        with patch.object(flow_module, "async_setup_component", AsyncMock(return_value=True)):
+            result = await flow.async_step_user({"pairing_code":pairing.code, "name":"CinemaSeat Apple TV"})
+        self.assertEqual(result["type"], "abort")
+        args, updates = flow.async_update_reload_and_abort.call_args
+        self.assertIs(args[0], entry)
+        self.assertEqual(updates["reason"], "reconfigure_successful")
+        self.assertEqual(updates["title"], entry.title)
+        self.assertEqual(updates["data"]["player_id"], "tv")
+        self.assertNotEqual(updates["data"]["auth_token"], entry.data["auth_token"])
+        entry.data = updates["data"]
+        self.hub.register_entry(entry)
+        self.hub.finish_pairing(entry)
+        self.assertEqual(await pairing.future, entry.data["auth_token"])
+
+    async def test_disabled_existing_player_does_not_consume_pairing_code(self):
+        flow = flow_module.CinemaSeatConfigFlow()
+        flow.hass = SimpleNamespace(data={"cinemaseat":{"hub":self.hub}})
+        flow.async_set_unique_id = AsyncMock()
+        flow._async_current_entries = lambda: [SimpleNamespace(disabled_by="user", data={"player_id":"tv"})]
+        pairing = self.hub.begin_pairing("tv", self.socket, "local")
+        with patch.object(flow_module, "async_setup_component", AsyncMock(return_value=True)):
+            result = await flow.async_step_user({"pairing_code":pairing.code})
+        self.assertEqual(result["errors"], {"pairing_code":"player_disabled"})
+        self.assertIs(self.hub.peek_pairing(pairing.code), pairing)
         await self.hub.shutdown()
 
     async def test_reconfigure_rejects_a_different_tv(self):

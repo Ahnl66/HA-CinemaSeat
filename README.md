@@ -4,7 +4,7 @@ Search and control films in the CinemaSeat Apple TV app from Home Assistant. Cho
 
 **Pair using six digits.** Enter your HA address and port on the Apple TV, then enter the temporary code shown on the TV in Home Assistant. The player ID and a permanent connection key are transferred automatically. You never need to type a long password.
 
-**Search runs on the Apple TV:** Home Assistant → direct WebSocket → CinemaSeat → Plex or its local NAS index. HA does not connect to Plex or need a Plex token. MQTT is not required. CinemaSeat remains one tvOS app with normal browsing and automatic HA connectivity while the app is open.
+**Search runs on the Apple TV:** Home Assistant → direct WebSocket → CinemaSeat → its selected Plex, Jellyfin or Kyoo server and its local NAS index. CinemaSeat handles access to those libraries. MQTT is not required. CinemaSeat remains one tvOS app with normal browsing and automatic HA connectivity while the app is open.
 
 ## Requirements
 
@@ -48,9 +48,13 @@ Disabled movie sources disappear from app and HA libraries/search and cannot be 
 
 The media player exposes `enabled_sources`. The bundled dashboard hides disabled source choices and clears stale selections. Both movie sources can be off while HA remains connected. Turning the HA connection off makes the HA entity unavailable without removing entities or automations. **Allow control from Home Assistant** remains a separate permission. See [connection behavior and verification](docs/connections.md).
 
+## Upgrade to 0.12.1
+
+Update the integration through HACS and restart Home Assistant. This release accepts both CinemaSeat protocol versions and supports scoped movie IDs from Plex, Jellyfin and Kyoo, plus the local NAS library. If the same player needs a new pairing key, enter its new code through Add integration or Reconfigure to keep the existing entity. Update the dashboard resource URL below to load the timecode and search fixes.
+
 ## Native media player controls
 
-Update both the integration and the CinemaSeat app, then restart HA. Existing player entities and pairing are retained. The same device now includes Audio and Subtitles select entities. Standard media-player browsing provides Plex/NAS folders, film posters and Direct Play / Play Sequence choices. `media_player.play_media` accepts `extra.playback_mode: sequence`; the standard Play button releases the currently waiting sequence. Delayed room automations retain `cinemaseat.start_sequence` with the event's presentation ID.
+Update both the integration and the CinemaSeat app, then restart HA. Existing player entities and pairing are retained. The same device now includes Audio and Subtitles select entities. Standard media-player browsing provides enabled source folders, film posters and Direct Play / Play Sequence choices. `media_player.play_media` accepts `extra.playback_mode: sequence`; the standard Play button releases the currently waiting sequence. Delayed room automations retain `cinemaseat.start_sequence` with the event's presentation ID.
 
 Flat presentation/feature attributes, real curtain state, dynamic controls and anchored playback position are available directly on the media player. Timecode events remain second-by-second. See the [complete media-player reference and examples](docs/media-player.md).
 
@@ -67,7 +71,7 @@ The MQTT integration/broker can remain for other devices. If MQTT is loaded duri
 In your HA profile, enable **Advanced mode** if Resources is hidden. In **Settings → Dashboards → ⋮ → Resources**, add this **JavaScript module**:
 
 ```text
-/cinemaseat/cinema-search-card.js?v=0.12.0
+/cinemaseat/cinema-search-card.js?v=0.12.1
 ```
 
 Add a manual card, replacing the entity with your paired CinemaSeat player:
@@ -77,7 +81,7 @@ type: custom:cinemaseat-dashboard-card
 entity: media_player.cinemaseat_mac
 ```
 
-The dashboard has **Control**, **Library**, **Events & tests** and **Diagnostics** tabs. It includes native Plex/NAS browsing, film posters, both sequence-preparation routes, exact-presentation release, both track-control routes, a live event monitor, observational timecode tests, all attributes/capabilities and local JSON exports. See the [complete dashboard guide](docs/dashboard.md). Existing `cinemaseat-search-card` configurations also receive these features. A full-width panel-view example is supplied in JSON and YAML.
+The dashboard has **Control**, **Library**, **Events & tests** and **Diagnostics** tabs. It includes native browsing by source, film posters, both sequence-preparation routes, exact-presentation release, both track-control routes, a live event monitor, observational timecode tests, all attributes/capabilities and local JSON exports. See the [complete dashboard guide](docs/dashboard.md). Existing `cinemaseat-search-card` configurations also receive these features. A full-width panel-view example is supplied in JSON and YAML.
 
 The player selector lists configured CinemaSeat players; restrict it with an optional `entities` list. A custom `title` is supported. Playback, pause, stop, chapter buttons, and audio/subtitle choices are built into this card. All controls follow the selected player. Use the complete [example dashboard](examples/dashboard.yaml) without adding separate playback buttons.
 

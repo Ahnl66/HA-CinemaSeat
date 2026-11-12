@@ -5,6 +5,7 @@ import binascii
 from contextlib import suppress
 import json
 import math
+import re
 import time
 from datetime import timedelta
 from uuid import uuid4
@@ -21,6 +22,33 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
+
+
+SOURCE_NAMES = {"plex": "Plex", "jellyfin": "Jellyfin", "kyoo": "Kyoo", "nas": "NAS"}
+
+def media_source(movie_id):
+    """Classify the public ID; an unknown ID never aliases the active server."""
+    if not isinstance(movie_id, str) or not movie_id or len(movie_id.encode("utf-8")) > 1600:
+        return None
+    if movie_id.startswith("nas:"):
+        return "nas"
+    if movie_id.isascii() and movie_id.isdecimal():
+        return "plex"  # Legacy v1 servers only; v2 admission rejects these IDs.
+    fields = movie_id.split(":")
+    if (len(fields) != 5 or fields[0] != "vs1" or fields[1] not in {"plex", "jellyfin", "kyoo"}
+            or not re.fullmatch(r"[0-9a-f]{64}", fields[2]) or fields[3] != "movie"
+            or not re.fullmatch(r"[A-Za-z0-9_-]+", fields[4])):
+        return None
+    try:
+        raw = base64.b64decode(fields[4] + "=" * (-len(fields[4]) % 4), altchars=b"-_", validate=True)
+        text = raw.decode("utf-8")
+        if not raw or len(raw) > 1024 or any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in text):
+            return None
+        if base64.urlsafe_b64encode(raw).decode().rstrip("=") != fields[4]:
+            return None
+    except (ValueError, UnicodeError, binascii.Error):
+        return None
+    return fields[1]
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -99,7 +127,7 @@ class CinemaSeatPlayer(MediaPlayerEntity):
                    "rating_started", "rating_ended", "audio_started", "audio_ended", "start_movie", "pause_movie",
                    "resume_movie", "change_chapter", "change_audio", "change_subtitle", "stop_movie", "movie_ended",
                    "timecode", "step_skipped", "playback_error", "curtain_state_changed"}
-        if (event.get("version") != 1 or event.get("player_id") != self.entry.data["player_id"]
+        if (event.get("version") not in (1, 2) or event.get("player_id") != self.entry.data["player_id"]
                 or event.get("boot_id") != self.snapshot.get("boot_id")
                 or event.get("event") not in allowed or not isinstance(presentation, dict)):
             return
@@ -118,7 +146,7 @@ class CinemaSeatPlayer(MediaPlayerEntity):
                 "boot_id": event["boot_id"], "presentation_id": presentation["id"],
                 "session_id": event.get("session_id"), "event": event["event"], "sequence": sequence,
                 "movie_id": presentation.get("movie_id"), "lead": presentation.get("lead"),
-                "source": "nas" if (presentation.get("movie_id") or "").startswith("nas:") else "plex",
+                "source": media_source(presentation.get("movie_id")),
                 "phase": presentation.get("phase"), "position": state.get("position", 0),
                 "duration": state.get("duration", 0), "status": state.get("status"),
                 "previous_position": event.get("previous_position"), "discontinuity": event.get("discontinuity", True),
@@ -146,7 +174,7 @@ class CinemaSeatPlayer(MediaPlayerEntity):
     def _state_received(self, message):
         try:
             value = json.loads(message.payload)
-            if value.get("version") != 1 or value.get("player_id") != self.entry.data["player_id"]:
+            if value.get("version") not in (1, 2) or value.get("player_id") != self.entry.data["player_id"]:
                 return
             if (value.get("boot_id") == self.snapshot.get("boot_id")
                     and value.get("sequence", 0) < self.snapshot.get("sequence", 0)):
@@ -162,7 +190,8 @@ class CinemaSeatPlayer(MediaPlayerEntity):
             meaningful = lambda state: {k: v for k, v in state.items() if k not in {"sequence", "position"}}
             publish = (not previous or meaningful(previous) != meaningful(value)
                        or abs(value.get("position", 0) - expected) > 2 or now - self._reported_at >= 30)
-            if value.get("enabled_sources") != previous.get("enabled_sources"):
+            if (value.get("enabled_sources") != previous.get("enabled_sources")
+                    or value.get("server_generation") != previous.get("server_generation")):
                 self._artwork_cache.clear()
             self.snapshot = value
             self.updated = now
@@ -191,7 +220,7 @@ class CinemaSeatPlayer(MediaPlayerEntity):
         try:
             reply = json.loads(message.payload)
             item = self.pending.get(str(reply.get("command_id", "")).lower())
-            if not item or item["future"].done() or reply.get("version") != 1:
+            if not item or item["future"].done() or reply.get("version") not in (1, 2):
                 return
             if item["boot"] and reply.get("boot_id") != item["boot"]:
                 return
@@ -239,10 +268,10 @@ class CinemaSeatPlayer(MediaPlayerEntity):
                 "sequence_phase": presentation.get("phase"), "waiting_for_ha": presentation.get("waiting_for_ha", False),
                 "sequence_released": presentation.get("released", False), "feature_movie_id": presentation.get("movie_id"),
                 "feature_title": presentation.get("title"), "feature_duration": presentation.get("duration"),
-                "library_source": "nas" if (presentation.get("movie_id") or self.media_content_id or "").startswith("nas:") else "plex" if self.media_content_id else None}
+                "library_source": media_source(presentation.get("movie_id") or self.media_content_id)}
         return {**flat, "pairing_required": not bool(self.entry.data.get("auth_token")), **{k: self.snapshot.get(k) for k in [
             "player_id", "boot_id", "session_id", "status", "owner", "buffering", "error_code",
-            "capabilities", "curtain_state", "presentation", "ha_mode", "remote_control_allowed", "can_start_playback", "can_browse_library", "can_control_playback", "chapter_id", "enabled_sources",
+            "capabilities", "curtain_state", "presentation", "ha_mode", "remote_control_allowed", "can_start_playback", "can_browse_library", "can_control_playback", "chapter_id", "enabled_sources", "server_generation",
             "audio_tracks", "subtitle_tracks", "selected_audio_id", "selected_subtitle_id", "subtitles_off",
         ]}}
 
@@ -302,9 +331,9 @@ class CinemaSeatPlayer(MediaPlayerEntity):
     async def _load_artwork(self, movie_id):
         if not movie_id or not self.available or "get_artwork" not in self.snapshot.get("capabilities", []):
             return None, None
-        if ("nas" if movie_id.startswith("nas:") else "plex") not in self.snapshot.get("enabled_sources", ["plex", "nas"]):
+        if media_source(movie_id) not in self.snapshot.get("enabled_sources", ["plex", "nas"]):
             return None, None
-        key = (self.snapshot.get("boot_id"), movie_id)
+        key = (self.snapshot.get("boot_id"), self.snapshot.get("server_generation"), movie_id)
         cached = self._artwork_cache.get(key)
         if cached and time.monotonic() < cached[0]:
             return cached[1], "image/jpeg"
@@ -318,6 +347,8 @@ class CinemaSeatPlayer(MediaPlayerEntity):
                 return None, None
         except (HomeAssistantError, ValueError, binascii.Error):
             return None, None
+        if key[:2] != (self.snapshot.get("boot_id"), self.snapshot.get("server_generation")):
+            return None, None
         if len(self._artwork_cache) >= 8:
             self._artwork_cache.pop(next(iter(self._artwork_cache)))
         self._artwork_cache[key] = (time.monotonic() + 300, data)
@@ -330,7 +361,7 @@ class CinemaSeatPlayer(MediaPlayerEntity):
             can_expand=True, children=children)
         sources = self.snapshot.get("enabled_sources", ["plex", "nas"])
         if media_content_type in {"movie", "cinemaseat_sequence"} and media_content_id:
-            if ("nas" if media_content_id.startswith("nas:") else "plex") not in sources:
+            if media_source(media_content_id) not in sources:
                 raise BrowseError("This CinemaSeat source is disabled")
             def option(kind, title):
                 return BrowseMedia(title=title, media_class=MediaClass.MOVIE, media_content_type=kind,
@@ -340,11 +371,11 @@ class CinemaSeatPlayer(MediaPlayerEntity):
                 options.append(option("cinemaseat_sequence", "Play Sequence"))
             return folder("Film options", "root", options)
         if not media_content_id or media_content_id == "root":
-            return folder("CinemaSeat", "root", [folder(source.title() if source == "plex" else "NAS", f"{source}:0", []) for source in sources if source in {"plex", "nas"}])
+            return folder("CinemaSeat", "root", [folder(SOURCE_NAMES[source], f"{source}:0", []) for source in sources if source in set(SOURCE_NAMES)])
         try:
             source, offset = media_content_id.split(":", 1)
             offset = int(offset)
-            if source not in sources or source not in {"nas", "plex"} or offset < 0 or offset > 1_000_000:
+            if source not in sources or source not in set(SOURCE_NAMES) or offset < 0 or offset > 1_000_000:
                 raise ValueError
         except (ValueError, AttributeError):
             raise BrowseError("Invalid CinemaSeat library page") from None
@@ -364,15 +395,18 @@ class CinemaSeatPlayer(MediaPlayerEntity):
         next_offset = offset + len(movies)
         if movies and next_offset < reply.get("total", next_offset):
             children.append(folder("Next page", f"{source}:{next_offset}", []))
-        return folder(source.upper(), f"{source}:{offset}", children)
+        return folder(SOURCE_NAMES[source], f"{source}:{offset}", children)
 
     async def _request(self, action, state=None, *, timeout=20, operation=None, **fields):
+        version = (state or self.snapshot).get("version", 1)
+        if version not in (1, 2):
+            raise HomeAssistantError("Update the CinemaSeat integration for this player protocol")
         sources = (state or self.snapshot).get("enabled_sources", ["plex", "nas"])
         movie_id = fields.get("movie_id")
         source = fields.get("source")
-        if movie_id and ("nas" if movie_id.startswith("nas:") else "plex") not in sources:
+        if movie_id and media_source(movie_id) not in sources:
             raise HomeAssistantError("This CinemaSeat source is disabled")
-        if source in {"plex", "nas"} and source not in sources:
+        if source in set(SOURCE_NAMES) and source not in sources:
             raise HomeAssistantError("This CinemaSeat source is disabled")
         if self._unloading:
             raise HomeAssistantError("CinemaSeat was unloaded")
@@ -387,7 +421,7 @@ class CinemaSeatPlayer(MediaPlayerEntity):
                 "select_audio_current", "select_subtitle_current", "seek_current", "advance_sequence"}, "operation": operation,
         }
         command = {
-            "version": 1, "command_id": command_id, "player_id": self.entry.data["player_id"],
+            "version": (state or self.snapshot).get("version", 1), "command_id": command_id, "player_id": self.entry.data["player_id"],
             "controller_id": self.controller, "auth_token": self.entry.data.get("auth_token", ""),
             "expires_at": time.time() + 20, "action": action,
         }
@@ -412,7 +446,7 @@ class CinemaSeatPlayer(MediaPlayerEntity):
         text = query.search_query.strip()
         if not text or len(text) > 128:
             raise SearchError("Enter a film title of 1–128 characters")
-        if query.media_content_type not in (None, MediaType.MOVIE, "cinemaseat", "cinemaseat_nas", "cinemaseat_plex"):
+        if query.media_content_type not in (None, MediaType.MOVIE, "cinemaseat", "cinemaseat_nas", "cinemaseat_plex", "cinemaseat_jellyfin", "cinemaseat_kyoo"):
             return SearchMedia(result=[])
         if query.media_filter_classes and MediaClass.MOVIE not in query.media_filter_classes:
             return SearchMedia(result=[])
@@ -422,13 +456,13 @@ class CinemaSeatPlayer(MediaPlayerEntity):
                 if "search_movies" not in state.get("capabilities", []):
                     raise HomeAssistantError("Update CinemaSeat on the connected player to enable search")
                 reply = await self._request("search_movies", state, query=text,
-                                            source={"cinemaseat_nas": "nas", "cinemaseat_plex": "plex"}.get(query.media_content_type, "all"))
+                                            source={"cinemaseat_nas": "nas", "cinemaseat_plex": "plex", "cinemaseat_jellyfin": "jellyfin", "cinemaseat_kyoo": "kyoo"}.get(query.media_content_type, "all"))
             except HomeAssistantError as err:
                 raise SearchError(str(err)) from err
         return SearchMedia(result=[BrowseMedia(
             media_class=MediaClass.MOVIE, media_content_type=MediaType.MOVIE,
             media_content_id=movie["id"],
-            title=movie["title"] + (f" ({movie['year']})" if movie.get("year") else "") + (" [NAS]" if movie["id"].startswith("nas:") else " [Plex]"),
+            title=movie["title"] + (f" ({movie['year']})" if movie.get("year") else "") + (" [" + SOURCE_NAMES.get(media_source(movie["id"]), "Unknown") + "]"),
             can_play=state.get("can_start_playback", True), can_expand=False,
         ) for movie in reply.get("movies", [])])
 
@@ -482,7 +516,7 @@ class CinemaSeatPlayer(MediaPlayerEntity):
                             control_id=control, timeout=120)
 
     async def async_play_media(self, media_type, media_id, **kwargs):
-        if media_type not in (MediaType.MOVIE, "cinemaseat", "cinemaseat_sequence") or not isinstance(media_id, str) or not media_id or len(media_id) > 128:
+        if media_type not in (MediaType.MOVIE, "cinemaseat", "cinemaseat_sequence") or not isinstance(media_id, str) or not media_id or len(media_id.encode("utf-8")) > 1600:
             raise HomeAssistantError("Choose a CinemaSeat film result")
         if kwargs.get("announce") or kwargs.get("enqueue") not in (None, "replace", "play"):
             raise HomeAssistantError("CinemaSeat does not support announcements or a playback queue")
@@ -492,7 +526,7 @@ class CinemaSeatPlayer(MediaPlayerEntity):
         audio_id = extra.get("audio_id")
         subtitle_id = extra.get("subtitle_id")
         off = extra.get("subtitles_off", subtitle_id is None)
-        if (any(track is not None and (not isinstance(track, str) or not track or len(track) > 128)
+        if (any(track is not None and (not isinstance(track, str) or not track or len(track.encode("utf-8")) > 8192)
                 for track in (audio_id, subtitle_id)) or not isinstance(off, bool)
                 or (off and subtitle_id is not None)):
             raise HomeAssistantError("Invalid track selection")

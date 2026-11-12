@@ -1,4 +1,12 @@
 /* All library and track requests go through the paired tvOS player. */
+const cinemaSourceNames={plex:"Plex",jellyfin:"Jellyfin",kyoo:"Kyoo",nas:"NAS"};
+function cinemaMediaSource(id) {
+  if(typeof id!=="string"||id.length>1600)return null;
+  if(id.startsWith("nas:"))return "nas";
+  if(/^[0-9]+$/.test(id))return "plex";
+  const fields=id.split(":");
+  return fields.length===5&&fields[0]==="vs1"&&["plex","jellyfin","kyoo"].includes(fields[1])&&/^[0-9a-f]{64}$/.test(fields[2])&&fields[3]==="movie"&&/^[A-Za-z0-9_-]+$/.test(fields[4])?fields[1]:null;
+}
 class CinemaSeatSearchCard extends HTMLElement {
   constructor() {
     super();
@@ -26,19 +34,19 @@ class CinemaSeatSearchCard extends HTMLElement {
         <nav class="tabs" role="tablist" aria-label="Dashboard sections"><button data-page="control" role="tab">Control</button><button data-page="library" role="tab">Library</button><button data-page="events" role="tab">Events & tests</button><button data-page="diagnostics" role="tab">Diagnostics</button></nav>
         <div id="message" role="status" aria-live="polite"></div>
         <div class="page grid" data-section="control">
-          <section class="panel" aria-label="Selected player controls"><h3>Playback</h3><div class="controls"><button data-service="media_play">Play / resume</button><button data-service="media_pause">Pause</button><button data-service="media_stop">Stop presentation</button><button data-service="media_previous_track">Previous chapter</button><button data-service="media_next_track">Next chapter / step</button></div><label for="timecode">Move feature to timecode</label><div class="controls"><input id="timecode" aria-label="Move to Timecode" placeholder="HH:MM:SS" inputmode="numeric"><button id="moveTimecode">Move to Timecode</button></div><p class="hint">Chapter and seek commands apply to the feature. Both HA and the ATV remote remain usable. Current chapter: <strong id="chapterText">—</strong></p></section>
+          <section class="panel" aria-label="Selected player controls"><h3>Playback</h3><div class="controls"><button data-service="media_play">Play / resume</button><button data-service="media_pause">Pause</button><button data-service="media_stop">Stop presentation</button><button data-service="media_previous_track">Previous chapter</button><button data-service="media_next_track">Next chapter / step</button></div><label for="timecode">Move feature to timecode</label><div class="controls"><input id="timecode" aria-label="Move to Timecode" type="text" placeholder="HH:MM:SS" inputmode="text"><button id="moveTimecode">Move to Timecode</button></div><p class="hint">Chapter and seek commands apply to the feature. Both HA and the ATV remote remain usable. Current chapter: <strong id="chapterText">—</strong></p></section>
           <section class="panel"><h3>Sequence & curtain</h3><div id="sequenceFacts" class="facts"></div><div class="controls"><button id="releaseSequence">Release this presentation</button><button id="skipSequence">Skip sequence step</button><button id="showCurtain" aria-pressed="false">Show curtain</button></div><p class="hint">Release uses the exact presentation ID shown here. It does not enable automatic release of later presentations. On current apps the curtain belongs to Play Sequence.</p><label for="commandRoute">Sequence preparation route</label><select id="commandRoute"><option value="standard">Standard media_player.play_media</option><option value="custom">CinemaSeat prepare_sequence action</option></select><p class="hint">Choose a NAS film under Library. Both routes prepare the same sequence and wait for explicit release.</p></section>
           <section class="panel"><h3>Film audio & subtitles</h3><div id="currentTracks" hidden><h4 id="currentTitle">Current film tracks</h4><label for="currentAudio">Audio via CinemaSeat action</label><select id="currentAudio"></select><label for="currentSubtitle">Subtitles via CinemaSeat action</label><select id="currentSubtitle"></select></div><p class="hint">Track choices follow confirmed player feedback. Session IDs protect against a film change.</p></section>
           <section class="panel"><h3>Native HA selectors</h3><label for="nativeAudio">Audio via select.select_option</label><select id="nativeAudio"></select><label for="nativeSubtitle">Subtitles via select.select_option</label><select id="nativeSubtitle"></select><p id="nativeStatus" class="hint"></p></section>
         </div>
         <div class="page grid" data-section="library" hidden>
-          <section class="panel wide"><h3>Search or browse your library</h3><label for="source">Search source</label><select id="source"><option value="all">Plex and NAS</option><option value="nas">NAS</option><option value="plex">Plex</option></select><form><input aria-label="Film title" placeholder="Search for a film…" maxlength="128" required><button type="submit">Search</button></form><div class="controls"><button id="browseRoot" class="secondary">Browse sources</button><button id="browsePlex" class="secondary">Browse Plex</button><button id="browseNAS" class="secondary">Browse NAS</button><button id="browseBack" class="secondary">Back</button></div><p id="browsePath" class="hint">Search up to 50 matches, or browse all indexed films in pages of 30.</p><div id="results"></div><div class="controls"><button id="nextPage" hidden>Next page</button></div></section>
+          <section class="panel wide"><h3>Search or browse your library</h3><label for="source">Search source</label><select id="source"><option value="all">All enabled sources</option><option value="nas">NAS</option><option value="plex">Plex</option><option value="jellyfin">Jellyfin</option><option value="kyoo">Kyoo</option></select><form><input aria-label="Film title" placeholder="Search for a film…" maxlength="128" required><button type="submit">Search</button></form><div class="controls"><button id="browseRoot" class="secondary">Browse sources</button><button id="browsePlex" class="secondary">Browse Plex</button><button id="browseJellyfin" class="secondary">Browse Jellyfin</button><button id="browseKyoo" class="secondary">Browse Kyoo</button><button id="browseNAS" class="secondary">Browse NAS</button><button id="browseBack" class="secondary">Back</button></div><p id="browsePath" class="hint">Search up to 50 matches, or browse all indexed films in pages of 30.</p><div id="results"></div><div class="controls"><button id="nextPage" hidden>Next page</button></div></section>
           <section id="selection" class="panel" hidden><h3 id="selectionTitle"></h3><label for="startAudio">Audio before start</label><select id="startAudio"></select><label for="startSubtitle">Subtitles before start</label><select id="startSubtitle"></select><label for="automationPlayback">Saved automation playback</label><select id="automationPlayback"><option value="direct">Direct Play</option><option value="sequence">Play Sequence (separate release automation)</option></select><div class="controls"><button id="startSelected">Start with these choices</button><button id="sequenceSelected">Play Sequence with these choices</button><button id="makeAutomation" class="secondary">Make automation with these choices</button></div><p class="hint">Direct Start plays without sequence events or a release wait. Play Sequence waits for HA or a manual release. Saved start automations are run manually until you add a trigger.</p><details><summary>Selected movie details</summary><pre id="movieDetails"></pre></details></section>
-          <section class="panel"><h3>Film ID test</h3><label for="manualMovie">Exact indexed movie ID</label><input id="manualMovie" placeholder="nas:… or Plex movie ID" maxlength="128"><div class="controls"><button id="loadMovieDetails" class="secondary">Load details / tracks</button></div><p class="hint">Use an ID from search, browse or feature_movie_id. This reads details only; use the selected film buttons to start.</p></section>
+          <section class="panel"><h3>Film ID test</h3><label for="manualMovie">Exact indexed movie ID</label><input id="manualMovie" placeholder="Scoped movie ID or NAS ID" maxlength="1600"><div class="controls"><button id="loadMovieDetails" class="secondary">Load details / tracks</button></div><p class="hint">Use an ID from search, browse or feature_movie_id. This reads details only; use the selected film buttons to start.</p></section>
         </div>
         <div class="page grid" data-section="events" hidden>
           <section class="panel wide"><h3>Live CinemaSeat events</h3><div class="controls"><button id="listenEvents">Start listening</button><button id="clearEvents" class="secondary">Clear log</button><button id="exportEvents" class="secondary">Download event log</button><select id="eventFilter" aria-label="Event filter"><option value="all">All events</option><option value="sequence">Sequence & curtain</option><option value="playback">Playback & tracks</option><option value="timecode">Timecodes</option></select></div><p id="eventStatus" class="hint">Not listening. Events are live only; nothing is replayed.</p><p class="hint">Sequence events require Play Sequence. Direct Play has no presentation events. Event subscription may require an HA administrator.</p><div id="eventLog"></div></section>
-          <section class="panel"><h3>Timecode crossing test</h3><label for="markerTimecode">Feature timecode</label><input id="markerTimecode" placeholder="HH:MM:SS" inputmode="numeric"><div class="controls"><button id="armMarker">Arm for current feature version</button><button id="resetMarker" class="secondary">Reset</button></div><p id="markerStatus" class="hint">Observe a timecode crossing without executing room scripts.</p><p class="hint">Uses actual timecode events, not estimated HA progress. Paused/buffering samples and skipped ranges do not trigger the marker. It fires once for the captured film version and presentation.</p></section>
+          <section class="panel"><h3>Timecode crossing test</h3><label for="markerTimecode">Feature timecode</label><input id="markerTimecode" type="text" placeholder="HH:MM:SS" inputmode="text"><div class="controls"><button id="armMarker">Arm for current feature version</button><button id="resetMarker" class="secondary">Reset</button></div><p id="markerStatus" class="hint">Observe a timecode crossing without executing room scripts.</p><p class="hint">Uses actual timecode events, not estimated HA progress. Paused/buffering samples and skipped ranges do not trigger the marker. It fires once for the captured film version and presentation.</p></section>
           <section class="panel"><h3>Integration test checklist</h3><ol class="checklist"><li>Open CS with control disabled: library/status available, playback disabled.</li><li>Enable HA control on ATV; browse/search Plex and NAS and inspect tracks/posters.</li><li>Play directly: test pause, resume, seek, chapters and both track-control routes.</li><li>Start a NAS sequence from HA; inspect Prepare, release it and skip preroll.</li><li>Start Play Sequence on ATV; repeat HA controls and ATV remote controls.</li><li>Arm a marker; cross it normally, then test seeking over it and rewinding.</li><li>Disable HA control during playback; confirm ATV playback continues.</li><li>Disable Plex/NAS in ATV connection settings; confirm films disappear and stale IDs cannot start.</li><li>Re-enable sources; confirm saved settings, index and home rows return.</li><li>Disable the HA connection; confirm local playback continues and HA becomes unavailable.</li><li>Background/reopen CS; confirm reconnect without replaying events.</li></ol></section>
         </div>
         <div class="page grid" data-section="diagnostics" hidden>
@@ -75,7 +83,7 @@ class CinemaSeatSearchCard extends HTMLElement {
     this.shadowRoot.querySelector("#currentAudio").addEventListener("change",()=>this._switchTrack("audio"));
     this.shadowRoot.querySelector("#currentSubtitle").addEventListener("change",()=>this._switchTrack("subtitle"));
     for (const button of this.shadowRoot.querySelectorAll("button[data-page]")) button.addEventListener("click",()=>this._showPage(button.dataset.page));
-    for (const [id,type,content] of [["browseRoot",null,null],["browsePlex","cinemaseat_library","plex:0"],["browseNAS","cinemaseat_library","nas:0"]])
+    for (const [id,type,content] of [["browseRoot",null,null],["browsePlex","cinemaseat_library","plex:0"],["browseJellyfin","cinemaseat_library","jellyfin:0"],["browseKyoo","cinemaseat_library","kyoo:0"],["browseNAS","cinemaseat_library","nas:0"]])
       this.shadowRoot.querySelector("#"+id).addEventListener("click",()=>this._browse(type,content));
     this.shadowRoot.querySelector("#browseBack").addEventListener("click",()=>this._browseBack());
     this.shadowRoot.querySelector("#nextPage").addEventListener("click",()=>{if(this._nextPage)this._browse(this._nextPage.media_content_type,this._nextPage.media_content_id);});
@@ -125,18 +133,20 @@ class CinemaSeatSearchCard extends HTMLElement {
     const unavailable=!state||["unavailable","unknown"].includes(state.state);
     const attributes=state?.attributes||{};
     const sources=attributes.enabled_sources??["plex","nas"];
-    const sourceKey=JSON.stringify(sources);
-    const filtered=this._results.filter(movie=>sources.includes((movie.id||movie.media_content_id||"").startsWith("nas:")?"nas":"plex"));
+    const sourceKey=JSON.stringify([sources,attributes.server_generation??null]);
+    const generationChanged=this._serverGeneration!==undefined&&this._serverGeneration!==(attributes.server_generation??null);
+    this._serverGeneration=attributes.server_generation??null;
+    const filtered=generationChanged?[]:this._results.filter(movie=>sources.includes(cinemaMediaSource(movie.id||movie.media_content_id||"")));
     if(this._sourceKey!==sourceKey||filtered.length!==this._results.length){
       this._sourceKey=sourceKey;this._results=filtered;
       this._browseHistory=[];this._nextPage=null;this._renderResults();
     }
-    if(this._selection&&!sources.includes(this._selection.id.startsWith("nas:")?"nas":"plex")){
+    if(this._selection&&(generationChanged||!sources.includes(cinemaMediaSource(this._selection.id)))){
       this._selection=null;this._renderSelection();
     }
     const sourceSelect=this.shadowRoot.querySelector("#source");
     for(const option of sourceSelect.options)option.hidden=option.value!=="all"&&!sources.includes(option.value);
-    sourceSelect.options[0].textContent=sources.length===2?"Plex and NAS":sources.length?sources[0].toUpperCase():"No enabled sources";
+    sourceSelect.options[0].textContent=sources.length?sources.map(source=>cinemaSourceNames[source]??source).join(" and "):"No enabled sources";
     if(sourceSelect.value!=="all"&&!sources.includes(sourceSelect.value))sourceSelect.value="all";
     const canBrowse=attributes.can_browse_library??attributes.ha_mode;
     const canStart=attributes.can_start_playback??attributes.ha_mode;
@@ -265,7 +275,7 @@ class CinemaSeatSearchCard extends HTMLElement {
         open.addEventListener("click",()=>this._browse(movie.media_content_type,movie.media_content_id));row.append(open);return row;
       }
       const name=document.createElement("div");name.className="name";name.textContent=movie.title;
-      const detail=document.createElement("small");detail.textContent=(movie.media_content_id.startsWith("nas:")?"NAS":"Plex")+" · Film ID: "+movie.media_content_id;name.append(detail);
+      const detail=document.createElement("small");detail.textContent=(cinemaSourceNames[cinemaMediaSource(movie.media_content_id)]??"Unknown")+" · Film ID: "+movie.media_content_id;name.append(detail);
       const options=document.createElement("button");options.className="details";options.textContent="Options";
       options.setAttribute("aria-label","Options "+movie.title);options.addEventListener("click",()=>this._details(movie));
       const start=document.createElement("button");start.className="play";start.textContent="Start";
@@ -287,7 +297,7 @@ class CinemaSeatSearchCard extends HTMLElement {
     try {
       const source=this.shadowRoot.querySelector("#source").value;
       const response=await this._hass.callWS({type:"media_player/search_media",entity_id:this._entity(),search_query:query,
-        ...(source!=="all"?{media_content_type:"cinemaseat_"+source}:{})});
+        ...(source!=="all"?{media_content_type:"cinemaseat_"+source,media_content_id:source+":0"}:{})});
       this._results=response.result||[];this._renderResults();
       this._message(this._results.length?`${this._results.length} film(s) found.${this._results.length===50?" Maximum 50 results; refine your search.":""}`:"No films found.");
     } catch (err) {this._message(err.message||String(err),true);}
@@ -454,8 +464,8 @@ class CinemaSeatSearchCard extends HTMLElement {
     this._facts("sequenceFacts",[["Lead",p.lead],["Phase",p.phase],["Waiting for HA",!!p.waiting_for_ha],["Released",!!p.released],["Curtain",a.curtain_state],["Presentation ID",p.id]]);
     const release=this.shadowRoot.querySelector("#releaseSequence");release.dataset.presentation=p.id||"";
     release.disabled=this._busy||unavailable||!currentControl||!p.waiting_for_ha||!caps.includes("start_sequence");
-    for(const id of ["browseRoot","browsePlex","browseNAS","browseBack","nextPage"])this.shadowRoot.querySelector("#"+id).disabled=this._busy||unavailable||(a.can_browse_library??a.ha_mode)===false||!caps.includes("browse_movies");
-    for(const [id,source] of [["browsePlex","plex"],["browseNAS","nas"]]){
+    for(const id of ["browseRoot","browsePlex","browseJellyfin","browseKyoo","browseNAS","browseBack","nextPage"])this.shadowRoot.querySelector("#"+id).disabled=this._busy||unavailable||(a.can_browse_library??a.ha_mode)===false||!caps.includes("browse_movies");
+    for(const [id,source] of [["browsePlex","plex"],["browseJellyfin","jellyfin"],["browseKyoo","kyoo"],["browseNAS","nas"]]){
       this.shadowRoot.querySelector("#"+id).hidden=!(a.enabled_sources??["plex","nas"]).includes(source);
     }
     this.shadowRoot.querySelector("#browseBack").disabled ||= this._browseHistory.length<2;

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.1 — 2026-11-12
+
+- Restore availability and control for CinemaSeat players using protocol 2. Support scoped Plex, Jellyfin and Kyoo movie IDs and keep protocol 1 compatibility.
+- Reconnect an existing player through Add integration with a fresh six-digit code while keeping its entity and name.
+- Fix searches filtered by source and allow colons in the dashboard timecode fields.
+
 ## 0.11.1 — 2026-10-19
 
 - Keep the current-film overview full width when no poster is available, including idle/disconnected states.

@@ -25,6 +25,7 @@ class CinemaSeatConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         hub = self.hass.data[DOMAIN]["hub"]
         errors = {}
         if user_input is not None:
+            target_entry = entry
             code = str(user_input.get("pairing_code", "")).strip()
             try:
                 if not re.fullmatch(r"[0-9]{6}", code):
@@ -33,18 +34,28 @@ class CinemaSeatConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if entry and pairing.player_id != entry.data["player_id"]:
                     raise ValueError("wrong_player")
                 await self.async_set_unique_id(pairing.player_id)
-                if not entry:
+                if target_entry is None:
+                    target_entry = next((existing for existing in self._async_current_entries()
+                                         if existing.data.get("player_id") == pairing.player_id), None)
+                if target_entry is None:
                     self._abort_if_unique_id_configured()
+                elif target_entry.disabled_by is not None:
+                    raise ValueError("player_disabled")
                 data = hub.claim_pairing(code)
             except ValueError as err:
                 errors["pairing_code"] = str(err)
             else:
-                name = user_input.get("name", entry.title if entry else "CinemaSeat Apple TV").strip()
-                name = name or "CinemaSeat Apple TV"
+                # Add integration can also reconnect an existing player. Keep its
+                # name unless the user explicitly opens that entry's reconfigure form.
+                default_name = target_entry.title if target_entry else "CinemaSeat Apple TV"
+                name = default_name
+                if entry is not None or target_entry is None:
+                    name = user_input.get("name", default_name).strip() or default_name
                 data["name"] = name
-                if entry:
+                if target_entry:
                     # Replace rather than merge to remove requires_pairing/legacy fields.
-                    return self.async_update_reload_and_abort(entry, title=name, data=data)
+                    return self.async_update_reload_and_abort(target_entry, title=name, data=data,
+                                                              reason="reconfigure_successful")
                 return self.async_create_entry(title=name, data=data)
         return self.async_show_form(step_id="reconfigure" if entry else "user",
             data_schema=vol.Schema({

@@ -22,7 +22,7 @@ Pairing is not a playback-control connection. In normal mode the app closes the 
 
 On entering HA mode, the app sends `{type: "hello", version: 1, player_id, secret}`. HA validates the key against the loaded entry with constant-time comparison and replies `{type: "connected"}`. Deleted, disabled, unknown, or unpaired entries cannot authenticate. Keys are sent in WebSocket frames, never URLs or logs. The app scopes stored keys to a normalized HA endpoint and clears them when the destination changes.
 
-HA sends `{type: "command", command: ...}`. The app sends state/reply/event envelopes with `type` and the corresponding `state`, `reply`, or `event` payload. These reuse the established CinemaSeat command protocol version 1: command UUID, player/controller IDs, expiry, boot/session/control IDs, action, and internal key. State and replies contain sanitized library information only.
+HA sends `{type: "command", command: ...}`. The app sends state/reply/event envelopes with `type` and the corresponding `state`, `reply`, or `event` payload. Protocol versions 1 and 2 use command UUIDs, player/controller IDs, expiry, boot/session/control IDs, actions and the pairing key. HA uses the player's reported protocol version for subsequent commands. Protocol 2 uses scoped server movie IDs and includes the enabled sources and the active server generation in state. Pass scoped movie IDs back intact. State and replies contain sanitized library information only.
 
 The app serializes normal commands but handles `get_state` and lease heartbeats independently of slow library fetches. HA tracks pending commands and matches replies by command and boot IDs. State is sent at least once per second; the entity becomes unavailable after 20 seconds without fresh state. WebSocket heartbeat and a bounded reconnect backoff detect interrupted connections. Leaving HA mode, backgrounding, or unloading an entry closes control.
 
@@ -52,7 +52,7 @@ The closed overlay remains mounted across preparation/start. Preparation arms th
 
 ## Media browser and artwork extensions (0.9.0)
 
-Commands retain version 1, pairing authentication, expiry and boot checks. `browse_movies` accepts `source` (`nas`, `plex`, `all`) and an optional zero-based integer `offset` (0–1,000,000); it returns up to 30 sanitized movie DTOs plus `total`. Sorting uses title and a stable ID tie-break. No stream URLs or headers are returned. Browsing requires HA mode.
+Commands use pairing authentication, expiry and boot checks. `browse_movies` accepts `source` (`nas`, `plex`, `jellyfin`, `kyoo`, `all`) and an optional zero-based integer `offset` (0–1,000,000); it returns up to 30 sanitized movie DTOs plus `total`. Sorting uses title and a stable ID tie-break. No stream URLs or headers are returned. Browsing requires an active pairing and an enabled source.
 
 `get_artwork` accepts an indexed `movie_id`. It returns `artwork` as base64 JPEG, maximum 90,000 decoded bytes. The app reads at most 4 MiB of source image data and scales to at most 400 pixels per dimension. JSON frames avoid escaping base64 slashes and remain within the 131,072-byte transport limit. At most two artwork reads run concurrently, separate from the serial control queue; HA queues additional thumbnails and caches eight images for five minutes per app boot. Outside HA mode only the active feature/current movie artwork is accessible. No arbitrary URL/path can be requested by HA.
 
